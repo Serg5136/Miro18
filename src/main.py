@@ -8,6 +8,7 @@ from .board_model import Card as ModelCard, Connection as ModelConnection, Frame
 from .config import THEMES, load_theme_name, save_theme_name
 from .history import History
 from .ui import LayoutBuilder
+from .view.canvas_view import CanvasView
 
 class BoardApp:
     def __init__(self):
@@ -97,6 +98,7 @@ class BoardApp:
         self.ui_builder = LayoutBuilder()
 
         self._build_ui()
+        self.canvas_view = CanvasView(self.canvas, self.minimap, self.theme)
         self.init_board_state()
 
         # Обработчик закрытия окна
@@ -486,53 +488,18 @@ class BoardApp:
         self.connect_mode = False
         self.connect_from_card_id = None
         self.zoom_factor = 1.0
-        self.canvas.config(scrollregion=(0, 0, 4000, 4000),
-                           bg=self.theme["bg"])
-        self.next_card_id = 1
-        self.next_frame_id = 1
-
-        self.draw_grid()
+        self.canvas.config(scrollregion=(0, 0, 4000, 4000), bg=self.theme["bg"])
 
         # --- новая часть: используем модель BoardData ---
         board = BoardData.from_primitive(data)
+        self.cards = board.cards
+        self.connections = board.connections
+        self.frames = board.frames
 
-        # Рамки
-        for frame in board.frames.values():
-            self.create_frame(
-                frame.x1,
-                frame.y1,
-                frame.x2,
-                frame.y2,
-                title=frame.title,
-                frame_id=frame.id,
-                collapsed=frame.collapsed,
-            )
+        self.next_card_id = max(self.cards.keys(), default=0) + 1
+        self.next_frame_id = max(self.frames.keys(), default=0) + 1
 
-        # Карточки
-        for card in board.cards.values():
-            self.create_card(
-                card.x,
-                card.y,
-                card.text,
-                color=card.color,
-                card_id=card.id,
-                width=card.width,
-                height=card.height,
-            )
-
-        # Связи
-        for conn in board.connections:
-            from_id = conn.from_id
-            to_id = conn.to_id
-            if from_id in self.cards and to_id in self.cards:
-                self.create_connection(from_id, to_id, label=conn.label)
-
-        # Обновляем scrollregion и миникарту
-        bbox = self.canvas.bbox("all")
-        if bbox:
-            self.canvas.config(scrollregion=bbox)
-
-        self.update_minimap()
+        self.render_board()
 
 
     def push_history(self):
@@ -575,23 +542,15 @@ class BoardApp:
     # ---------- Сетка ----------
 
     def draw_grid(self):
-        self.canvas.delete("grid")
-        spacing = self.grid_size
-        x_max = 4000
-        y_max = 4000
-        for x in range(0, x_max + 1, spacing):
-            self.canvas.create_line(
-                x, 0, x, y_max,
-                fill=self.theme["grid"],
-                tags=("grid",)
-            )
-        for y in range(0, y_max + 1, spacing):
-            self.canvas.create_line(
-                0, y, x_max, y,
-                fill=self.theme["grid"],
-                tags=("grid",)
-            )
-        self.canvas.tag_lower("grid")
+        self.canvas_view.draw_grid(self.grid_size)
+
+    def render_board(self):
+        self.canvas_view.render_board(self.cards, self.frames, self.connections, self.grid_size)
+
+    def render_selection(self):
+        self.canvas_view.render_selection(
+            self.cards, self.frames, self.selected_cards, self.selected_frame_id
+        )
 
     def snap_cards_to_grid(self, card_ids):
         if not self.snap_to_grid or not card_ids:
@@ -710,28 +669,7 @@ class BoardApp:
         else:
             self.next_card_id = max(self.next_card_id, card_id + 1)
 
-        x1 = x - width / 2
-        y1 = y - height / 2
-        x2 = x + width / 2
-        y2 = y + height / 2
-
-        rect_id = self.canvas.create_rectangle(
-            x1, y1, x2, y2,
-            fill=color,
-            outline=self.theme["card_outline"],
-            width=1.5,
-            tags=("card", f"card_{card_id}")
-        )
-        text_id = self.canvas.create_text(
-            x, y,
-            text=text,
-            width=width - 10,
-            font=("Arial", 10),
-            fill=self.theme["text"],
-            tags=("card_text", f"card_{card_id}")
-        )
-
-        self.cards[card_id] = ModelCard(
+        card = ModelCard(
             id=card_id,
             x=x,
             y=y,
@@ -739,9 +677,9 @@ class BoardApp:
             height=height,
             text=text,
             color=color,
-            rect_id=rect_id,
-            text_id=text_id,
         )
+        self.canvas_view.draw_card(card)
+        self.cards[card_id] = card
         return card_id
 
     def get_card_id_from_item(self, item_ids):
@@ -788,27 +726,7 @@ class BoardApp:
         else:
             self.next_frame_id = max(self.next_frame_id, frame_id + 1)
 
-        rect_id = self.canvas.create_rectangle(
-            x1, y1, x2, y2,
-            fill=self.theme["frame_collapsed_bg"] if collapsed else self.theme["frame_bg"],
-            outline=self.theme["frame_outline"],
-            width=2,
-            dash=(3, 3) if collapsed else (),
-            tags=("frame", f"frame_{frame_id}")
-        )
-        title_id = self.canvas.create_text(
-            x1 + 10, y1 + 15,
-            text=title,
-            anchor="w",
-            font=("Arial", 10, "bold"),
-            fill=self.theme["text"],
-            tags=("frame_title", f"frame_{frame_id}")
-        )
-
-        self.canvas.tag_lower(rect_id)
-        self.canvas.tag_lower("grid")
-
-        self.frames[frame_id] = ModelFrame(
+        frame = ModelFrame(
             id=frame_id,
             x1=x1,
             y1=y1,
@@ -816,9 +734,9 @@ class BoardApp:
             y2=y2,
             title=title,
             collapsed=collapsed,
-            rect_id=rect_id,
-            title_id=title_id,
         )
+        self.canvas_view.draw_frame(frame)
+        self.frames[frame_id] = frame
 
         if collapsed:
             self.apply_frame_collapse_state(frame_id)
@@ -844,18 +762,8 @@ class BoardApp:
 
     def select_frame(self, frame_id):
         self._clear_card_selection()
-        if self.selected_frame_id is not None and self.selected_frame_id in self.frames:
-            self._set_frame_outline(self.selected_frame_id, width=2)
-
         self.selected_frame_id = frame_id
-        if frame_id is not None and frame_id in self.frames:
-            self._set_frame_outline(frame_id, width=3)
-
-    def _set_frame_outline(self, frame_id, width):
-        frame = self.frames.get(frame_id)
-        if not frame:
-            return
-        self.canvas.itemconfig(frame.rect_id, width=width)
+        self.render_selection()
 
     def toggle_selected_frame_collapse(self):
         frame_id = self.selected_frame_id
@@ -1002,14 +910,13 @@ class BoardApp:
     def _clear_card_selection(self):
         for cid in list(self.selected_cards):
             if cid in self.cards:
-                self._set_card_outline(cid, width=1.5)
                 self.hide_card_handles(cid)
         self.selected_cards.clear()
         self.selected_card_id = None
+        self.render_selection()
 
     def select_card(self, card_id, additive=False):
         if self.selected_frame_id is not None:
-            self._set_frame_outline(self.selected_frame_id, width=2)
             self.selected_frame_id = None
 
         if not additive:
@@ -1018,17 +925,11 @@ class BoardApp:
         if card_id is not None and card_id in self.cards:
             self.selected_cards.add(card_id)
             self.selected_card_id = card_id
-            self._set_card_outline(card_id, width=3)
             self.show_card_handles(card_id)
         else:
             if not additive:
                 self.selected_card_id = None
-
-    def _set_card_outline(self, card_id, width):
-        card = self.cards.get(card_id)
-        if not card:
-            return
-        self.canvas.itemconfig(card.rect_id, width=width)
+        self.render_selection()
 
     # ---------- Мышь: выбор/перетаскивание/resize/connect-drag ----------
 
@@ -1390,48 +1291,16 @@ class BoardApp:
         card_from = self.cards[from_id]
         card_to = self.cards[to_id]
 
-        sx, sy, tx, ty = self._connection_anchors(card_from, card_to)
-
-        line_id = self.canvas.create_line(
-            sx, sy, tx, ty,
-            arrow=tk.LAST,
-            width=2,
-            fill=self.theme["connection"],
-            tags=("connection",)
+        connection = ModelConnection(
+            from_id=from_id,
+            to_id=to_id,
+            label=label,
         )
-        label_id = None
-        if label:
-            mx = (sx + tx) / 2
-            my = (sy + ty) / 2
-            label_id = self.canvas.create_text(
-                mx, my,
-                text=label,
-                font=("Arial", 9, "italic"),
-                fill=self.theme["connection_label"],
-                tags=("connection_label",)
-            )
-        self.connections.append(
-            ModelConnection(
-                from_id=from_id,
-                to_id=to_id,
-                label=label,
-                line_id=line_id,
-                label_id=label_id,
-            )
-        )
+        self.canvas_view.draw_connection(connection, card_from, card_to)
+        self.connections.append(connection)
 
     def update_connections_for_card(self, card_id):
-        for conn in self.connections:
-            if conn.from_id == card_id or conn.to_id == card_id:
-                from_card = self.cards.get(conn.from_id)
-                to_card = self.cards.get(conn.to_id)
-                if from_card and to_card:
-                    sx, sy, tx, ty = self._connection_anchors(from_card, to_card)
-                    self.canvas.coords(conn.line_id, sx, sy, tx, ty)
-                    if conn.label_id:
-                        mx = (sx + tx) / 2
-                        my = (sy + ty) / 2
-                        self.canvas.coords(conn.label_id, mx, my)
+        self.canvas_view.update_connection_positions(self.connections, self.cards, card_id)
 
     def toggle_connect_mode(self):
         if not self.connect_mode:
@@ -2004,53 +1873,7 @@ class BoardApp:
     # ---------- Мини-карта ----------
 
     def update_minimap(self):
-        if not self.minimap:
-            return
-        self.minimap.delete("all")
-        self.minimap.config(bg=self.theme["minimap_bg"])
-        bbox = self.canvas.bbox("all")
-        if not bbox:
-            return
-        x1, y1, x2, y2 = bbox
-        if x2 == x1 or y2 == y1:
-            return
-
-        width = int(self.minimap.cget("width"))
-        height = int(self.minimap.cget("height"))
-        scale_x = width / (x2 - x1)
-        scale_y = height / (y2 - y1)
-        scale = min(scale_x, scale_y)
-
-        def map_point(px, py):
-            mx = (px - x1) * scale
-            my = (py - y1) * scale
-            return mx, my
-
-        for card in self.cards.values():
-            cx, cy = card.x, card.y
-            w, h = card.width, card.height
-            mx1, my1 = map_point(cx - w / 2, cy - h / 2)
-            mx2, my2 = map_point(cx + w / 2, cy + h / 2)
-            self.minimap.create_rectangle(mx1, my1, mx2, my2,
-                                          outline=self.theme["minimap_card_outline"], fill="")
-
-        for frame in self.frames.values():
-            fx1, fy1, fx2, fy2 = self.canvas.coords(frame.rect_id)
-            mx1, my1 = map_point(fx1, fy1)
-            mx2, my2 = map_point(fx2, fy2)
-            self.minimap.create_rectangle(mx1, my1, mx2, my2,
-                                          outline=self.theme["minimap_frame_outline"], dash=(2, 2))
-
-        vx0, vx1 = self.canvas.xview()
-        vy0, vy1 = self.canvas.yview()
-        view_x1 = x1 + vx0 * (x2 - x1)
-        view_x2 = x1 + vx1 * (x2 - x1)
-        view_y1 = y1 + vy0 * (y2 - y1)
-        view_y2 = y1 + vy1 * (y2 - y1)
-        mvx1, mvy1 = map_point(view_x1, view_y1)
-        mvx2, mvy2 = map_point(view_x2, view_y2)
-        self.minimap.create_rectangle(mvx1, mvy1, mvx2, mvy2,
-                                      outline=self.theme["minimap_viewport"])
+        self.canvas_view.render_minimap(self.cards.values(), self.frames.values())
 
     def on_minimap_click(self, event):
         bbox = self.canvas.bbox("all")
@@ -2096,6 +1919,7 @@ class BoardApp:
         self.theme_name = "dark" if self.theme_name == "light" else "light"
         self.theme = THEMES[self.theme_name]
         save_theme_name(self.theme_name)
+        self.canvas_view.set_theme(self.theme)
         state = self.get_board_data()
         self.set_board_from_data(state)
         self.canvas.config(bg=self.theme["bg"])

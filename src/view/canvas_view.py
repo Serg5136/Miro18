@@ -1,0 +1,285 @@
+import tkinter as tk
+from typing import Dict, Iterable, Sequence
+
+from ..board_model import Card, Connection, Frame
+
+
+class CanvasView:
+    def __init__(self, canvas: tk.Canvas, minimap: tk.Canvas | None, theme: Dict[str, str]):
+        self.canvas = canvas
+        self.minimap = minimap
+        self.theme = theme
+
+    def set_theme(self, theme: Dict[str, str]) -> None:
+        self.theme = theme
+        self.canvas.config(bg=self.theme["bg"])
+        if self.minimap:
+            self.minimap.config(bg=self.theme["minimap_bg"])
+
+    def draw_grid(self, grid_size: int) -> None:
+        self.canvas.delete("grid")
+        spacing = grid_size
+        x_max = 4000
+        y_max = 4000
+        for x in range(0, x_max + 1, spacing):
+            self.canvas.create_line(
+                x,
+                0,
+                x,
+                y_max,
+                fill=self.theme["grid"],
+                tags=("grid",),
+            )
+        for y in range(0, y_max + 1, spacing):
+            self.canvas.create_line(
+                0,
+                y,
+                x_max,
+                y,
+                fill=self.theme["grid"],
+                tags=("grid",),
+            )
+        self.canvas.tag_lower("grid")
+
+    def draw_card(self, card: Card) -> None:
+        x1 = card.x - card.width / 2
+        y1 = card.y - card.height / 2
+        x2 = card.x + card.width / 2
+        y2 = card.y + card.height / 2
+
+        rect_id = self.canvas.create_rectangle(
+            x1,
+            y1,
+            x2,
+            y2,
+            fill=card.color,
+            outline=self.theme["card_outline"],
+            width=1.5,
+            tags=("card", f"card_{card.id}"),
+        )
+        text_id = self.canvas.create_text(
+            card.x,
+            card.y,
+            text=card.text,
+            width=card.width - 10,
+            font=("Arial", 10),
+            fill=self.theme["text"],
+            tags=("card_text", f"card_{card.id}"),
+        )
+
+        card.rect_id = rect_id
+        card.text_id = text_id
+
+    def draw_frame(self, frame: Frame) -> None:
+        rect_id = self.canvas.create_rectangle(
+            frame.x1,
+            frame.y1,
+            frame.x2,
+            frame.y2,
+            fill=self.theme["frame_collapsed_bg"] if frame.collapsed else self.theme["frame_bg"],
+            outline=self.theme["frame_outline"],
+            width=2,
+            dash=(3, 3) if frame.collapsed else (),
+            tags=("frame", f"frame_{frame.id}"),
+        )
+        title_id = self.canvas.create_text(
+            frame.x1 + 10,
+            frame.y1 + 15,
+            text=frame.title,
+            anchor="w",
+            font=("Arial", 10, "bold"),
+            fill=self.theme["text"],
+            tags=("frame_title", f"frame_{frame.id}"),
+        )
+
+        self.canvas.tag_lower(rect_id)
+        self.canvas.tag_lower("grid")
+
+        frame.rect_id = rect_id
+        frame.title_id = title_id
+
+    def _connection_anchors(self, from_card: Card, to_card: Card) -> Sequence[float]:
+        x1, y1 = from_card.x, from_card.y
+        x2, y2 = to_card.x, to_card.y
+        dx = x2 - x1
+        dy = y2 - y1
+
+        if abs(dx) > abs(dy):
+            sx = x1 + (from_card.width / 2) * (1 if dx > 0 else -1)
+            sy = y1
+        else:
+            sx = x1
+            sy = y1 + (from_card.height / 2) * (1 if dy > 0 else -1)
+
+        if abs(dx) > abs(dy):
+            tx = x2 - (to_card.width / 2) * (1 if dx > 0 else -1)
+            ty = y2
+        else:
+            tx = x2
+            ty = y2 - (to_card.height / 2) * (1 if dy > 0 else -1)
+
+        return sx, sy, tx, ty
+
+    def draw_connection(self, connection: Connection, from_card: Card, to_card: Card) -> None:
+        sx, sy, tx, ty = self._connection_anchors(from_card, to_card)
+
+        line_id = self.canvas.create_line(
+            sx,
+            sy,
+            tx,
+            ty,
+            arrow=tk.LAST,
+            width=2,
+            fill=self.theme["connection"],
+            tags=("connection",),
+        )
+
+        label_id = None
+        if connection.label:
+            mx = (sx + tx) / 2
+            my = (sy + ty) / 2
+            label_id = self.canvas.create_text(
+                mx,
+                my,
+                text=connection.label,
+                font=("Arial", 9, "italic"),
+                fill=self.theme["connection_label"],
+                tags=("connection_label",),
+            )
+
+        connection.line_id = line_id
+        connection.label_id = label_id
+
+    def update_connection_positions(
+        self,
+        connections: Iterable[Connection],
+        cards: Dict[int, Card],
+        target_card_id: int | None = None,
+    ) -> None:
+        for conn in connections:
+            if target_card_id is not None and conn.from_id != target_card_id and conn.to_id != target_card_id:
+                continue
+            from_card = cards.get(conn.from_id)
+            to_card = cards.get(conn.to_id)
+            if from_card is None or to_card is None:
+                continue
+            sx, sy, tx, ty = self._connection_anchors(from_card, to_card)
+            if conn.line_id:
+                self.canvas.coords(conn.line_id, sx, sy, tx, ty)
+            if conn.label_id:
+                mx = (sx + tx) / 2
+                my = (sy + ty) / 2
+                self.canvas.coords(conn.label_id, mx, my)
+
+    def render_board(
+        self,
+        cards: Dict[int, Card],
+        frames: Dict[int, Frame],
+        connections: Iterable[Connection],
+        grid_size: int,
+    ) -> None:
+        self.canvas.delete("all")
+        self.draw_grid(grid_size)
+
+        for frame in frames.values():
+            self.draw_frame(frame)
+        for card in cards.values():
+            self.draw_card(card)
+        for connection in connections:
+            from_card = cards.get(connection.from_id)
+            to_card = cards.get(connection.to_id)
+            if from_card is None or to_card is None:
+                continue
+            self.draw_connection(connection, from_card, to_card)
+
+        bbox = self.canvas.bbox("all")
+        if bbox:
+            self.canvas.config(scrollregion=bbox)
+
+        self.render_minimap(cards.values(), frames.values())
+
+    def render_selection(
+        self,
+        cards: Dict[int, Card],
+        frames: Dict[int, Frame],
+        selected_cards: Iterable[int],
+        selected_frame_id: int | None,
+    ) -> None:
+        selected_cards_set = set(selected_cards)
+        for cid, card in cards.items():
+            if card.rect_id:
+                width = 3 if cid in selected_cards_set else 1.5
+                self.canvas.itemconfig(card.rect_id, width=width)
+        for fid, frame in frames.items():
+            if frame.rect_id:
+                width = 3 if fid == selected_frame_id else 2
+                self.canvas.itemconfig(frame.rect_id, width=width)
+
+    def render_minimap(self, cards: Iterable[Card], frames: Iterable[Frame]) -> None:
+        if not self.minimap:
+            return
+        self.minimap.delete("all")
+        self.minimap.config(bg=self.theme["minimap_bg"])
+        bbox = self.canvas.bbox("all")
+        if not bbox:
+            return
+        x1, y1, x2, y2 = bbox
+        if x2 == x1 or y2 == y1:
+            return
+
+        width = int(self.minimap.cget("width"))
+        height = int(self.minimap.cget("height"))
+        scale_x = width / (x2 - x1)
+        scale_y = height / (y2 - y1)
+        scale = min(scale_x, scale_y)
+
+        def map_point(px: float, py: float) -> tuple[float, float]:
+            mx = (px - x1) * scale
+            my = (py - y1) * scale
+            return mx, my
+
+        for card in cards:
+            cx, cy = card.x, card.y
+            w, h = card.width, card.height
+            mx1, my1 = map_point(cx - w / 2, cy - h / 2)
+            mx2, my2 = map_point(cx + w / 2, cy + h / 2)
+            self.minimap.create_rectangle(
+                mx1,
+                my1,
+                mx2,
+                my2,
+                outline=self.theme["minimap_card_outline"],
+                fill="",
+            )
+
+        for frame in frames:
+            if frame.rect_id is None:
+                fx1, fy1, fx2, fy2 = frame.x1, frame.y1, frame.x2, frame.y2
+            else:
+                fx1, fy1, fx2, fy2 = self.canvas.coords(frame.rect_id)
+            mx1, my1 = map_point(fx1, fy1)
+            mx2, my2 = map_point(fx2, fy2)
+            self.minimap.create_rectangle(
+                mx1,
+                my1,
+                mx2,
+                my2,
+                outline=self.theme["minimap_frame_outline"],
+                dash=(2, 2),
+            )
+
+        vx0, vx1 = self.canvas.xview()
+        vy0, vy1 = self.canvas.yview()
+        view_x1 = x1 + vx0 * (x2 - x1)
+        view_x2 = x1 + vx1 * (x2 - x1)
+        view_y1 = y1 + vy0 * (y2 - y1)
+        view_y2 = y1 + vy1 * (y2 - y1)
+        mvx1, mvy1 = map_point(view_x1, view_y1)
+        mvx2, mvy2 = map_point(view_x2, view_y2)
+        self.minimap.create_rectangle(
+            mvx1,
+            mvy1,
+            mvx2,
+            mvy2,
+            outline=self.theme["minimap_viewport"],
+        )

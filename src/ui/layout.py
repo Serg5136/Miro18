@@ -47,6 +47,39 @@ class ToolbarFactory:
         )
         btn_text_color.pack(side="left", padx=2, pady=4)
         add_tooltip(btn_text_color, "Изменить цвет текста карточек для текущей темы")
+
+        size_frame = tk.Frame(toolbar, bg="#e0e0e0")
+        size_frame.pack(side="left", padx=(12, 2), pady=4)
+
+        tk.Label(size_frame, text="Ширина:", bg="#e0e0e0").grid(row=0, column=0, padx=(0, 4))
+        spn_width = tk.Spinbox(
+            size_frame,
+            from_=60,
+            to=1200,
+            width=6,
+            textvariable=app.var_card_width,
+        )
+        spn_width.grid(row=0, column=1, padx=(0, 8))
+        add_tooltip(spn_width, "Задайте ширину карточки в пикселях")
+
+        tk.Label(size_frame, text="Высота:", bg="#e0e0e0").grid(row=0, column=2, padx=(0, 4))
+        spn_height = tk.Spinbox(
+            size_frame,
+            from_=40,
+            to=1200,
+            width=6,
+            textvariable=app.var_card_height,
+        )
+        spn_height.grid(row=0, column=3, padx=(0, 8))
+        add_tooltip(spn_height, "Задайте высоту карточки в пикселях")
+
+        btn_apply_size = tk.Button(
+            size_frame,
+            text="Применить",
+            command=app.apply_card_size_from_controls,
+        )
+        btn_apply_size.grid(row=0, column=4)
+        add_tooltip(btn_apply_size, "Применить указанные ширину и высоту к выбранным карточкам")
         return toolbar
 
 

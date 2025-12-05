@@ -99,6 +99,8 @@ class BoardApp:
         # Привязка к сетке — переменные для UI
         self.var_snap_to_grid = tk.BooleanVar(value=self.snap_to_grid)
         self.var_grid_size = tk.IntVar(value=self.grid_size)
+        self.var_card_width = tk.IntVar(value=180)
+        self.var_card_height = tk.IntVar(value=100)
 
         # История (Undo/Redo) и автосохранение
         self.history = History()
@@ -679,6 +681,25 @@ class BoardApp:
             self.btn_redo_toolbar.config(
                 state="normal" if self.history and self.history.can_redo() else "disabled"
             )
+
+        self._sync_size_controls_with_selection()
+
+    def _sync_size_controls_with_selection(self) -> None:
+        if not hasattr(self, "var_card_width") or not hasattr(self, "var_card_height"):
+            return
+        card_id = self.selected_card_id if self.selected_card_id in self.cards else next(
+            (cid for cid in self.selected_cards if cid in self.cards),
+            None,
+        )
+        if card_id is None:
+            return
+
+        card = self.cards.get(card_id)
+        if not card:
+            return
+
+        self.var_card_width.set(int(card.width))
+        self.var_card_height.set(int(card.height))
 
     def update_connect_mode_indicator(self):
         self.connect_controller.update_connect_mode_indicator()
@@ -2608,6 +2629,64 @@ class BoardApp:
             self.update_connections_for_card(cid)
 
         self.push_history()
+
+    def apply_card_size_from_controls(self):
+        try:
+            target_width = int(self.var_card_width.get())
+            target_height = int(self.var_card_height.get())
+        except (tk.TclError, ValueError):
+            messagebox.showwarning(
+                "Некорректный размер",
+                "Введите целые числа для ширины и высоты карточки.",
+            )
+            return
+
+        if target_width <= 0 or target_height <= 0:
+            messagebox.showwarning(
+                "Некорректный размер",
+                "Ширина и высота должны быть положительными числами.",
+            )
+            return
+
+        card_ids = [cid for cid in self.selected_cards if cid in self.cards]
+        if not card_ids:
+            messagebox.showinfo("Нет выбора", "Сначала выберите карточку для изменения размера.")
+            return
+
+        changed = False
+        for cid in card_ids:
+            card = self.cards.get(cid)
+            if not card:
+                continue
+
+            original_w, original_h = card.width, card.height
+            card.width = target_width
+            card.height = target_height
+            layout = self.canvas_view.compute_card_layout(card)
+            attach_min_w, attach_min_h = self._compute_attachments_min_size(card, layout)
+            min_w = max(60, attach_min_w)
+            min_h = max(40, attach_min_h)
+            new_w = max(target_width, min_w)
+            new_h = max(target_height, min_h)
+            card.width = new_w
+            card.height = new_h
+
+            x1 = card.x - new_w / 2
+            y1 = card.y - new_h / 2
+            x2 = card.x + new_w / 2
+            y2 = card.y + new_h / 2
+            self.canvas.coords(card.rect_id, x1, y1, x2, y2)
+            width_scale = new_w / original_w if original_w else 1.0
+            height_scale = new_h / original_h if original_h else 1.0
+            self.update_card_layout(cid, attachment_scale=(width_scale, height_scale))
+            self.update_card_handles_positions(cid)
+            self.update_connections_for_card(cid)
+            changed = True
+
+        if changed:
+            self.update_minimap()
+            self.push_history()
+        self.update_controls_state()
     
     # ---------- Настройки сетки (UI-обработчики) ----------
     

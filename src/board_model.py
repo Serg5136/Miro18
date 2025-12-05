@@ -71,6 +71,8 @@ class Card:
     # UI поля (не сериализуются)
     rect_id: int | None = None
     text_id: int | None = None
+    text_bg_id: int | None = None
+    image_id: int | None = None
     resize_handle_id: int | None = None
     connect_handle_id: int | None = None
 

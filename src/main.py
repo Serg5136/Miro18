@@ -963,14 +963,96 @@ class BoardApp:
         target = max(1, int(base * preview_scale))
         return self._prepare_preview_image(image, max_size=(target, target), crop_to_square=True)
 
-    def _compute_attachment_offset(self, card: ModelCard, thumb_size: tuple[int, int], idx: int) -> tuple[float, float]:
+    def _calculate_attachment_preview_size(
+        self, card: ModelCard, attachment: Attachment, layout: dict[str, float] | None = None
+    ) -> tuple[int, int]:
+        layout = layout or self.canvas_view.compute_card_layout(card)
+        max_width = int(layout["image_width"])
+        max_height = int(layout["image_height"])
+        if max_width <= 0 or max_height <= 0:
+            return 0, 0
+
+        target_width = max(1, int(attachment.width * attachment.preview_scale))
+        target_height = max(1, int(attachment.height * attachment.preview_scale))
+        scale_limit = min(max_width / target_width, max_height / target_height, 1)
+        if scale_limit <= 0:
+            return 0, 0
+        final_width = max(1, int(target_width * scale_limit))
+        final_height = max(1, int(target_height * scale_limit))
+        return final_width, final_height
+
+    def _clamp_attachment_offset(
+        self,
+        attachment: Attachment,
+        preview_size: tuple[int, int],
+        layout: dict[str, float],
+    ) -> None:
+        if not preview_size[0] or not preview_size[1]:
+            return
+
+        max_dx = max(layout["image_width"] / 2 - preview_size[0] / 2, 0)
+        max_dy = max(layout["image_height"] / 2 - preview_size[1] / 2, 0)
+        attachment.offset_x = min(max(attachment.offset_x, -max_dx), max_dx)
+        attachment.offset_y = min(max(attachment.offset_y, -max_dy), max_dy)
+
+    def _auto_position_attachment(
+        self, card: ModelCard, attachment: Attachment, layout: dict[str, float]
+    ) -> None:
+        if not card.attachments:
+            attachment.offset_x = 0.0
+            attachment.offset_y = 0.0
+            return
+
+        previews = [
+            self._calculate_attachment_preview_size(card, a, layout)
+            for a in [*card.attachments, attachment]
+        ]
+        max_w = max((w for w, _ in previews), default=0)
+        max_h = max((h for _, h in previews), default=0)
+        thumb_size = (max_w or 1, max_h or 1)
+        idx = len(card.attachments)
+        offset_x, offset_y = self._compute_attachment_offset(card, thumb_size, idx, layout=layout)
+        attachment.offset_x = offset_x
+        attachment.offset_y = offset_y
+        self._clamp_attachment_offset(attachment, previews[-1], layout)
+
+    def _compute_attachment_offset(
+        self,
+        card: ModelCard,
+        thumb_size: tuple[int, int],
+        idx: int,
+        *,
+        layout: dict[str, float] | None = None,
+    ) -> tuple[float, float]:
+        layout = layout or self.canvas_view.compute_card_layout(card)
         padding = 6
-        per_row = max(int((card.width - padding) // (thumb_size[0] + padding)), 1)
+        per_row = max(int((layout["image_width"] - padding) // (thumb_size[0] + padding)), 1)
         col = idx % per_row
         row = idx // per_row
-        offset_x = -card.width / 2 + padding + thumb_size[0] / 2 + col * (thumb_size[0] + padding)
-        offset_y = -card.height / 2 + padding + thumb_size[1] / 2 + row * (thumb_size[1] + padding)
+        offset_x = -layout["image_width"] / 2 + padding + thumb_size[0] / 2 + col * (thumb_size[0] + padding)
+        offset_y = -layout["image_height"] / 2 + padding + thumb_size[1] / 2 + row * (thumb_size[1] + padding)
         return offset_x, offset_y
+
+    def _compute_attachments_min_size(
+        self, card: ModelCard, layout: dict[str, float]
+    ) -> tuple[float, float]:
+        if not card.attachments:
+            return 0.0, 0.0
+
+        padding = self.canvas_view.text_padding
+        required_width = 0.0
+        required_image_height = 0.0
+        for attachment in card.attachments:
+            preview_w, preview_h = self._calculate_attachment_preview_size(card, attachment, layout)
+            required_width = max(required_width, 2 * (abs(attachment.offset_x) + preview_w / 2))
+            required_image_height = max(
+                required_image_height, 2 * (abs(attachment.offset_y) + preview_h / 2)
+            )
+
+        min_width = required_width + 2 * padding
+        non_image_height = card.height - layout["image_height"]
+        min_height = non_image_height + required_image_height
+        return min_width, min_height
 
     def select_attachment(self, card_id: int | None, attachment_id: int | None) -> None:
         if card_id is None or attachment_id is None:
@@ -1181,58 +1263,53 @@ class BoardApp:
 
         self._clear_attachment_previews_for_card(card_id)
 
-        attachment = card.attachments[0]
-        image = self._load_attachment_image(attachment)
-        if image is None:
-            return
-
         layout = self.canvas_view.compute_card_layout(card)
-        max_width = int(layout["image_width"])
-        max_height = int(layout["image_height"])
-        if max_width <= 0 or max_height <= 0:
-            return
-
-        target_width = max(1, int(image.width * attachment.preview_scale))
-        target_height = max(1, int(image.height * attachment.preview_scale))
-        scale_limit = min(max_width / target_width, max_height / target_height, 1)
-        if scale_limit <= 0:
-            return
-        final_width = max(1, int(target_width * scale_limit))
-        final_height = max(1, int(target_height * scale_limit))
-        preview = self._resize_image(image, (final_width, final_height))
-        if preview is None:
-            return
-        photo = ImageTk.PhotoImage(preview)
-
         center_y = layout["image_top"] + layout["image_height"] / 2
-        item_id = self.canvas.create_image(
-            card.x,
-            center_y,
-            image=photo,
-            anchor="center",
-            tags=("attachment_preview", f"attachment_{card_id}_{attachment.id}"),
-        )
-        if card.text_bg_id:
-            self.canvas.tag_lower(item_id, card.text_bg_id)
-        self.canvas.tag_bind(
-            f"attachment_{card_id}_{attachment.id}",
-            "<Button-1>",
-            self.on_attachment_click,
-        )
-        self.canvas.tag_bind(
-            f"attachment_{card_id}_{attachment.id}",
-            "<Double-Button-1>",
-            self.on_attachment_double_click,
-        )
-        self.attachment_items[(card_id, attachment.id)] = item_id
-        self.attachment_tk_images[(card_id, attachment.id)] = photo
-        card.image_id = item_id
+
+        for attachment in card.attachments:
+            image = self._load_attachment_image(attachment)
+            if image is None:
+                continue
+
+            final_width, final_height = self._calculate_attachment_preview_size(card, attachment, layout)
+            if final_width <= 0 or final_height <= 0:
+                continue
+
+            self._clamp_attachment_offset(attachment, (final_width, final_height), layout)
+            preview = self._resize_image(image, (final_width, final_height))
+            if preview is None:
+                continue
+            photo = ImageTk.PhotoImage(preview)
+
+            item_id = self.canvas.create_image(
+                card.x + attachment.offset_x,
+                center_y + attachment.offset_y,
+                image=photo,
+                anchor="center",
+                tags=("attachment_preview", f"attachment_{card_id}_{attachment.id}"),
+            )
+            if card.text_bg_id:
+                self.canvas.tag_lower(item_id, card.text_bg_id)
+            self.canvas.tag_bind(
+                f"attachment_{card_id}_{attachment.id}",
+                "<Button-1>",
+                self.on_attachment_click,
+            )
+            self.canvas.tag_bind(
+                f"attachment_{card_id}_{attachment.id}",
+                "<Double-Button-1>",
+                self.on_attachment_double_click,
+            )
+            self.attachment_items[(card_id, attachment.id)] = item_id
+            self.attachment_tk_images[(card_id, attachment.id)] = photo
+            card.image_id = item_id
+            if self.selected_attachment == (card_id, attachment.id):
+                self._show_attachment_selection(card_id, attachment)
+
         if card.text_bg_id:
             self.canvas.tag_raise(card.text_bg_id)
         if card.text_id:
             self.canvas.tag_raise(card.text_id)
-        if self.selected_attachment == (card_id, attachment.id):
-            self._show_attachment_selection(card_id, attachment)
 
     def render_all_attachments(self) -> None:
         for card_id in list(self.cards.keys()):
@@ -1242,6 +1319,28 @@ class BoardApp:
         card = self.cards.get(card_id)
         if not card or not card.attachments:
             return
+        layout = self.canvas_view.compute_card_layout(card)
+        if isinstance(scale, tuple):
+            width_scale, height_scale = scale
+        else:
+            width_scale = height_scale = scale if scale is not None else 1.0
+
+        center_y = layout["image_top"] + layout["image_height"] / 2
+        for attachment in card.attachments:
+            preview_size = self._calculate_attachment_preview_size(card, attachment, layout)
+            if scale is not None:
+                attachment.offset_x *= width_scale
+                attachment.offset_y *= height_scale
+            self._clamp_attachment_offset(attachment, preview_size, layout)
+            item_id = self.attachment_items.get((card_id, attachment.id))
+            if item_id:
+                self.canvas.coords(
+                    item_id,
+                    card.x + attachment.offset_x,
+                    center_y + attachment.offset_y,
+                )
+                if card.text_bg_id:
+                    self.canvas.tag_lower(item_id, card.text_bg_id)
         self.render_card_attachments(card_id)
 
     def _read_clipboard_image(self):
@@ -1481,6 +1580,8 @@ class BoardApp:
                 else storage_path
             ),
         )
+        layout = self.canvas_view.compute_card_layout(card)
+        self._auto_position_attachment(card, attachment, layout)
         card.attachments.append(attachment)
         self.render_card_attachments(card_id)
         self.push_history()
@@ -1528,6 +1629,8 @@ class BoardApp:
             )
             return True
 
+        layout = self.canvas_view.compute_card_layout(card)
+        self._auto_position_attachment(card, attachment, layout)
         card.attachments.append(attachment)
         self.render_card_attachments(card_id)
         self.push_history()
@@ -1982,21 +2085,23 @@ class BoardApp:
                 self.canvas.delete(hid)
             card.connect_handles.pop(anchor, None)
 
-    def update_card_layout(self, card_id: int, *, redraw_attachment: bool = True) -> None:
+    def update_card_layout(
+        self,
+        card_id: int,
+        *,
+        redraw_attachment: bool = True,
+        attachment_scale: float | tuple[float, float] | None = None,
+    ) -> None:
         card = self.cards.get(card_id)
         if not card:
             return
         layout = self.canvas_view.compute_card_layout(card)
         self.canvas_view.apply_card_layout(card, layout)
-        if card.attachments and (redraw_attachment or not card.image_id):
-            self.render_card_attachments(card_id)
-        elif card.attachments and card.image_id:
-            center_y = layout["image_top"] + layout["image_height"] / 2
-            self.canvas.coords(card.image_id, card.x, center_y)
-            if card.text_bg_id:
-                self.canvas.tag_lower(card.image_id, card.text_bg_id)
-            if self.selected_attachment == (card_id, card.attachments[0].id):
-                self._show_attachment_selection(card_id, card.attachments[0])
+        if card.attachments:
+            if redraw_attachment or not card.image_id:
+                self.render_card_attachments(card_id)
+            else:
+                self.update_attachment_positions(card_id, scale=attachment_scale)
 
     def update_card_handles_positions(self, card_id):
         card = self.cards.get(card_id)

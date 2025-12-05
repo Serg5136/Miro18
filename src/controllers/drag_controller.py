@@ -198,8 +198,12 @@ class DragController:
                 card = app.cards.get(card_id)
                 if not card:
                     return
+                old_w, old_h = card.width, card.height
                 ox1, oy1 = app.drag_data["resize_origin"]
-                min_w, min_h = 60, 40
+                layout = app.canvas_view.compute_card_layout(card)
+                attach_min_w, attach_min_h = app._compute_attachments_min_size(card, layout)
+                min_w = max(60, attach_min_w)
+                min_h = max(40, attach_min_h)
                 new_x2 = max(ox1 + min_w, cx)
                 new_y2 = max(oy1 + min_h, cy)
                 w = new_x2 - ox1
@@ -213,7 +217,13 @@ class DragController:
                 x2 = new_x2
                 y2 = new_y2
                 app.canvas.coords(card.rect_id, x1, y1, x2, y2)
-                app.update_card_layout(card_id)
+                width_scale = w / old_w if old_w else 1.0
+                height_scale = h / old_h if old_h else 1.0
+                app.update_card_layout(
+                    card_id,
+                    redraw_attachment=False,
+                    attachment_scale=(width_scale, height_scale),
+                )
                 app.update_card_handles_positions(card_id)
                 app.update_connections_for_card(card_id)
                 app.drag_data["moved"] = True

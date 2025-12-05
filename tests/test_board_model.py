@@ -104,3 +104,31 @@ def test_attachment_restores_base64():
     assert primitive["attachments"][0]["data_base64"] == "YWJj"
     restored = Card.from_primitive(primitive)
     assert restored.attachments[0].data_base64 == "YWJj"
+
+
+def test_attachment_file_storage_roundtrip_preserves_path():
+    attachment = Attachment(
+        id=2,
+        name="photo.jpg",
+        source_type="file",
+        mime_type="image/jpeg",
+        width=50,
+        height=60,
+        storage_path="attachments/1-2.jpg",
+    )
+
+    card = Card(
+        id=1,
+        x=10,
+        y=20,
+        width=100,
+        height=50,
+        attachments=[attachment],
+    )
+
+    primitive = card.to_primitive()
+    assert primitive["attachments"][0]["storage_path"] == "attachments/1-2.jpg"
+    restored = Card.from_primitive(primitive)
+    restored_attachment = restored.attachments[0]
+    assert restored_attachment.storage_path == "attachments/1-2.jpg"
+    assert restored_attachment.data_base64 is None

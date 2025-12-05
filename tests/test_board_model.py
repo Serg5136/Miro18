@@ -88,6 +88,7 @@ def test_attachment_restores_base64():
         mime_type="image/png",
         width=10,
         height=10,
+        preview_scale=0.5,
         data_base64="YWJj",
     )
 
@@ -102,8 +103,10 @@ def test_attachment_restores_base64():
 
     primitive = card.to_primitive()
     assert primitive["attachments"][0]["data_base64"] == "YWJj"
+    assert primitive["attachments"][0]["preview_scale"] == 0.5
     restored = Card.from_primitive(primitive)
     assert restored.attachments[0].data_base64 == "YWJj"
+    assert restored.attachments[0].preview_scale == 0.5
 
 
 def test_attachment_file_storage_roundtrip_preserves_path():
@@ -114,6 +117,7 @@ def test_attachment_file_storage_roundtrip_preserves_path():
         mime_type="image/jpeg",
         width=50,
         height=60,
+        preview_scale=1.0,
         storage_path="attachments/1-2.jpg",
     )
 
@@ -131,4 +135,21 @@ def test_attachment_file_storage_roundtrip_preserves_path():
     restored = Card.from_primitive(primitive)
     restored_attachment = restored.attachments[0]
     assert restored_attachment.storage_path == "attachments/1-2.jpg"
+    assert restored_attachment.preview_scale == 1.0
     assert restored_attachment.data_base64 is None
+
+
+def test_attachment_preview_scale_defaults_for_legacy_data():
+    legacy_attachment = {
+        "id": 3,
+        "name": "legacy.png",
+        "width": 100,
+        "height": 100,
+        "source_type": "file",
+        "mime_type": "image/png",
+        # preview_scale отсутствует
+    }
+
+    restored = Attachment.from_primitive(legacy_attachment)
+
+    assert restored.preview_scale == 1.0

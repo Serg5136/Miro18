@@ -794,11 +794,14 @@ class BoardApp:
             height=image.height,
             offset_x=0.0,
             offset_y=0.0,
+            preview_scale=1.0,
             storage_path=storage_str,
             data_base64=data_base64,
         )
 
     def _prepare_attachment_for_save(self, attachment: Attachment) -> Attachment:
+        if not hasattr(attachment, "preview_scale"):
+            attachment.preview_scale = 1.0
         prepared = copy.copy(attachment)
         if not prepared.data_base64:
             data_base64 = self._read_attachment_base64(attachment)
@@ -864,6 +867,8 @@ class BoardApp:
         return ".bin"
 
     def _materialize_attachment(self, card_id: int, attachment: Attachment) -> bool:
+        if not hasattr(attachment, "preview_scale"):
+            attachment.preview_scale = 1.0
         path = self._resolve_attachment_path(attachment.storage_path)
         if path and path.exists():
             try:
@@ -1323,12 +1328,60 @@ class BoardApp:
             height=image.height,
             offset_x=0.0,
             offset_y=0.0,
+            preview_scale=1.0,
             storage_path=str(
                 storage_path.relative_to(Path.cwd())
                 if storage_path.is_relative_to(Path.cwd())
                 else storage_path
             ),
         )
+        card.attachments.append(attachment)
+        self.render_card_attachments(card_id)
+        self.push_history()
+        return True
+
+    def _attach_clipboard_image_to_card(self) -> bool:
+        if not self.selected_cards:
+            messagebox.showwarning(
+                "Прикрепить изображение", "Выберите карточку, чтобы добавить вложение."
+            )
+            return True
+
+        result = self._read_clipboard_image()
+        if result is None:
+            messagebox.showerror(
+                "Вставка изображения", "Буфер обмена не содержит поддерживаемое изображение."
+            )
+            return True
+
+        image, _fmt, mime_type, name = result
+        if not mime_type.startswith("image/"):
+            messagebox.showerror(
+                "Вставка изображения", "Формат изображения не поддерживается."
+            )
+            return True
+
+        card_id = self.selected_card_id or next(iter(self.selected_cards))
+        card = self.cards.get(card_id)
+        if card is None:
+            return True
+
+        attachment = self._store_attachment_image(
+            card,
+            image,
+            name=name or "clipboard.png",
+            mime_type=mime_type,
+            source_type="clipboard",
+            storage_ext=self._extension_from_mime(mime_type),
+            embed_base64=True,
+        )
+        if attachment is None:
+            messagebox.showerror(
+                "Вложения",
+                "Не удалось сохранить изображение или его размер превышает допустимый предел (5 МБ)",
+            )
+            return True
+
         card.attachments.append(attachment)
         self.render_card_attachments(card_id)
         self.push_history()

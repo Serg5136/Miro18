@@ -1115,7 +1115,8 @@ class BoardApp:
         layout: dict[str, float] | None = None,
     ) -> tuple[float, float]:
         layout = layout or self.canvas_view.compute_card_layout(card)
-        padding = 6
+        gutter = layout.get("padding", 10) * 0.6
+        padding = max(4.0, min(gutter, 12.0))
         per_row = max(int((layout["image_width"] - padding) // (thumb_size[0] + padding)), 1)
         col = idx % per_row
         row = idx // per_row
@@ -1129,7 +1130,7 @@ class BoardApp:
         if not card.attachments:
             return 0.0, 0.0
 
-        padding = self.canvas_view.text_padding
+        padding = layout.get("padding", self.canvas_view.text_padding_min)
         required_width = 0.0
         required_image_height = 0.0
         for attachment in card.attachments:

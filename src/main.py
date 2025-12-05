@@ -100,6 +100,7 @@ class BoardApp:
         self._build_ui()
         self.canvas_view = CanvasView(self.canvas, self.minimap, self.theme)
         self.init_board_state()
+        self.update_controls_state()
 
         # Обработчик закрытия окна
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -414,8 +415,7 @@ class BoardApp:
             self.selected_card_id = None
             self.selected_cards.clear()
             self.selected_frame_id = None
-            self.connect_mode = False
-            self.connect_from_card_id = None
+            self.set_connect_mode(False)
             self.zoom_factor = 1.0
             self.canvas.config(scrollregion=(0, 0, 4000, 4000),
                                bg=self.theme["bg"])
@@ -485,8 +485,7 @@ class BoardApp:
         self.selected_card_id = None
         self.selected_cards.clear()
         self.selected_frame_id = None
-        self.connect_mode = False
-        self.connect_from_card_id = None
+        self.set_connect_mode(False)
         self.zoom_factor = 1.0
         self.canvas.config(scrollregion=(0, 0, 4000, 4000), bg=self.theme["bg"])
 
@@ -500,6 +499,7 @@ class BoardApp:
         self.next_frame_id = max(self.frames.keys(), default=0) + 1
 
         self.render_board()
+        self.update_controls_state()
 
 
     def push_history(self):
@@ -508,6 +508,7 @@ class BoardApp:
         self.update_unsaved_flag()
         self.write_autosave(state)
         self.update_minimap()
+        self.update_controls_state()
 
     def on_undo(self, event=None):
         state = self.history.undo(self)
@@ -516,6 +517,7 @@ class BoardApp:
         self.update_unsaved_flag()
         self.write_autosave(state)
         self.update_minimap()
+        self.update_controls_state()
 
     def on_redo(self, event=None):
         state = self.history.redo(self)
@@ -524,6 +526,7 @@ class BoardApp:
         self.update_unsaved_flag()
         self.write_autosave(state)
         self.update_minimap()
+        self.update_controls_state()
 
     def update_unsaved_flag(self):
         self.unsaved_changes = (self.history.index != self.saved_history_index)
@@ -551,6 +554,52 @@ class BoardApp:
         self.canvas_view.render_selection(
             self.cards, self.frames, self.selected_cards, self.selected_frame_id
         )
+
+    def update_controls_state(self):
+        has_card_selection = bool(self.selected_cards)
+        has_frame_selection = self.selected_frame_id is not None
+
+        if hasattr(self, "btn_change_color"):
+            self.btn_change_color.config(state="normal" if has_card_selection else "disabled")
+        if hasattr(self, "btn_edit_text"):
+            self.btn_edit_text.config(state="normal" if has_card_selection else "disabled")
+        if hasattr(self, "btn_delete_cards"):
+            self.btn_delete_cards.config(state="normal" if has_card_selection else "disabled")
+        if hasattr(self, "btn_toggle_frame"):
+            self.btn_toggle_frame.config(state="normal" if has_frame_selection else "disabled")
+
+        if hasattr(self, "btn_undo_toolbar"):
+            self.btn_undo_toolbar.config(
+                state="normal" if self.history and self.history.can_undo() else "disabled"
+            )
+        if hasattr(self, "btn_redo_toolbar"):
+            self.btn_redo_toolbar.config(
+                state="normal" if self.history and self.history.can_redo() else "disabled"
+            )
+
+    def update_connect_mode_indicator(self):
+        if not hasattr(self, "btn_connect_mode"):
+            return
+        if self.connect_mode:
+            active_bg = self.theme.get("frame_collapsed_bg", self.btn_connect_mode_default_bg)
+            self.btn_connect_mode.config(
+                relief="sunken",
+                bg=active_bg,
+                fg=self.theme.get("text", "black"),
+                text=f"{self.btn_connect_mode_default_text} ✓",
+            )
+        else:
+            self.btn_connect_mode.config(
+                relief="raised",
+                bg=self.btn_connect_mode_default_bg,
+                text=self.btn_connect_mode_default_text,
+            )
+
+    def set_connect_mode(self, enabled: bool):
+        self.connect_mode = enabled
+        if not enabled:
+            self.connect_from_card_id = None
+        self.update_connect_mode_indicator()
 
     def snap_cards_to_grid(self, card_ids):
         if not self.snap_to_grid or not card_ids:
@@ -764,6 +813,7 @@ class BoardApp:
         self._clear_card_selection()
         self.selected_frame_id = frame_id
         self.render_selection()
+        self.update_controls_state()
 
     def toggle_selected_frame_collapse(self):
         frame_id = self.selected_frame_id
@@ -914,6 +964,7 @@ class BoardApp:
         self.selected_cards.clear()
         self.selected_card_id = None
         self.render_selection()
+        self.update_controls_state()
 
     def select_card(self, card_id, additive=False):
         if self.selected_frame_id is not None:
@@ -930,6 +981,7 @@ class BoardApp:
             if not additive:
                 self.selected_card_id = None
         self.render_selection()
+        self.update_controls_state()
 
     # ---------- Мышь: выбор/перетаскивание/resize/connect-drag ----------
 
@@ -993,8 +1045,7 @@ class BoardApp:
                     if card_id != self.connect_from_card_id:
                         self.create_connection(self.connect_from_card_id, card_id)
                         self.push_history()
-                    self.connect_mode = False
-                    self.connect_from_card_id = None
+                    self.set_connect_mode(False)
                     self.select_card(card_id, additive=False)
             return
 
@@ -1304,15 +1355,13 @@ class BoardApp:
 
     def toggle_connect_mode(self):
         if not self.connect_mode:
-            self.connect_mode = True
-            self.connect_from_card_id = None
+            self.set_connect_mode(True)
             messagebox.showinfo(
                 "Режим соединения",
                 "Кликните по первой карточке, затем по второй, чтобы соединить их."
             )
         else:
-            self.connect_mode = False
-            self.connect_from_card_id = None
+            self.set_connect_mode(False)
 
     # ---------- Цвет и текст карточки ----------
 
@@ -1927,6 +1976,7 @@ class BoardApp:
             self.minimap.config(bg=self.theme["minimap_bg"])
         self.btn_theme.config(text=self.get_theme_button_text())
         self.update_minimap()
+        self.update_connect_mode_indicator()
 
     # ---------- Закрытие ----------
 

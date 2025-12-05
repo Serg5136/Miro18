@@ -3,6 +3,7 @@ from typing import Optional
 
 from .sidebar import SidebarFactory
 from .canvas_events import CanvasEventsBinder
+from .tooltips import add_tooltip
 
 
 class ToolbarFactory:
@@ -16,6 +17,8 @@ class ToolbarFactory:
             command=app.on_undo,
         )
         btn_undo_toolbar.pack(side="left", padx=(8, 2), pady=4)
+        app.btn_undo_toolbar = btn_undo_toolbar
+        add_tooltip(btn_undo_toolbar, "Отменить последнее действие")
 
         btn_redo_toolbar = tk.Button(
             toolbar,
@@ -23,6 +26,8 @@ class ToolbarFactory:
             command=app.on_redo,
         )
         btn_redo_toolbar.pack(side="left", padx=2, pady=4)
+        app.btn_redo_toolbar = btn_redo_toolbar
+        add_tooltip(btn_redo_toolbar, "Повторить отменённое действие")
         return toolbar
 
 

@@ -77,6 +77,11 @@ class SidebarFactory:
         btn_export.pack(fill="x", padx=10, pady=5)
         add_tooltip(btn_export, "Сохранить доску как изображение PNG")
 
+        btn_attach_image = tk.Button(sidebar, text="Прикрепить изображение",
+                                     command=app.attach_image_from_file)
+        btn_attach_image.pack(fill="x", padx=10, pady=5)
+        add_tooltip(btn_attach_image, "Добавить изображение к выделенной карточке")
+
         tk.Label(sidebar, text="Вид", bg="#f0f0f0",
                  font=("Arial", 12, "bold")).pack(pady=(15, 5))
 

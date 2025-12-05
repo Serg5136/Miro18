@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, Iterable
 
 from tkinter import filedialog, messagebox
 
-from ..board_model import SCHEMA_VERSION
+from ..board_model import SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS
 
 
 class BoardFileError(Exception):
@@ -241,9 +241,10 @@ def _validate_board_data(data: Dict[str, Any]) -> None:
         raise BoardFileError(
             "Файл не содержит информацию о версии схемы (schema_version)."
         )
-    if version != SCHEMA_VERSION:
+    if version not in SUPPORTED_SCHEMA_VERSIONS:
         raise BoardFileError(
-            f"Неподдерживаемая версия схемы: {version}. Ожидается {SCHEMA_VERSION}."
+            "Неподдерживаемая версия схемы: "
+            f"{version}. Ожидается один из: {sorted(SUPPORTED_SCHEMA_VERSIONS)}."
         )
 
     missing = [key for key in REQUIRED_KEYS if key not in data]

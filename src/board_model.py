@@ -1,9 +1,52 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Dict, List, Any
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Literal
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+SUPPORTED_SCHEMA_VERSIONS = {1, SCHEMA_VERSION}
+
+
+@dataclass
+class Attachment:
+    """Метаданные вложения (например, изображения)."""
+
+    id: int
+    name: str
+    source_type: Literal["file", "clipboard"]
+    mime_type: str
+    width: int
+    height: int
+    offset_x: float = 0.0
+    offset_y: float = 0.0
+    storage_path: str | None = None
+
+    def to_primitive(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "source_type": self.source_type,
+            "mime_type": self.mime_type,
+            "width": self.width,
+            "height": self.height,
+            "offset_x": self.offset_x,
+            "offset_y": self.offset_y,
+            "storage_path": self.storage_path,
+        }
+
+    @staticmethod
+    def from_primitive(data: Dict[str, Any]) -> "Attachment":
+        return Attachment(
+            id=data["id"],
+            name=data["name"],
+            source_type=data.get("source_type", "file"),
+            mime_type=data.get("mime_type", "application/octet-stream"),
+            width=data.get("width", 0),
+            height=data.get("height", 0),
+            offset_x=data.get("offset_x", 0.0),
+            offset_y=data.get("offset_y", 0.0),
+            storage_path=data.get("storage_path"),
+        )
 
 
 @dataclass
@@ -20,6 +63,7 @@ class Card:
     height: float
     text: str = ""
     color: str = "#fff9b1"
+    attachments: List[Attachment] = field(default_factory=list)
 
     # UI поля (не сериализуются)
     rect_id: int | None = None
@@ -38,6 +82,7 @@ class Card:
             "height": self.height,
             "text": self.text,
             "color": self.color,
+            "attachments": [a.to_primitive() for a in self.attachments],
         }
 
     @staticmethod
@@ -52,6 +97,7 @@ class Card:
             height=data["height"],
             text=data.get("text", ""),
             color=data.get("color", "#fff9b1"),
+            attachments=[Attachment.from_primitive(a) for a in data.get("attachments", [])],
         )
 
 
@@ -169,7 +215,7 @@ class BoardData:
         Ожидаемый формат:
 
         {
-          "schema_version": 1,
+          "schema_version": 2,
           "cards": [
             {
               "id": int,
@@ -178,7 +224,20 @@ class BoardData:
               "width": float,
               "height": float,
               "text": str,
-              "color": str
+              "color": str,
+              "attachments": [
+                {
+                  "id": int,
+                  "name": str,
+                  "source_type": "file" | "clipboard",
+                  "mime_type": str,
+                  "width": int,
+                  "height": int,
+                  "offset_x": float,
+                  "offset_y": float,
+                  "storage_path": str | null
+                }, ...
+              ]
             }, ...
           ],
           "connections": [

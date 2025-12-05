@@ -1,7 +1,7 @@
 import tkinter as tk
-from tkinter import simpledialog, colorchooser, messagebox
 import base64
 import binascii
+from tkinter import colorchooser, filedialog, messagebox, simpledialog
 import copy
 import io
 from pathlib import Path
@@ -900,6 +900,103 @@ class BoardApp:
         self.render_card_attachments(card_id)
         self.push_history()
         return True
+
+    def _attach_image_from_file(self) -> bool:
+        try:
+            from PIL import Image
+        except ImportError:
+            messagebox.showerror(
+                "Прикрепить изображение",
+                "Для добавления изображений нужен пакет Pillow.\n"
+                "Установите его командой:\n\npip install pillow",
+            )
+            return True
+
+        if not self.selected_cards:
+            messagebox.showwarning(
+                "Прикрепить изображение",
+                "Выберите карточку, чтобы добавить вложение.",
+            )
+            return True
+
+        ext_map = {
+            ext: fmt
+            for ext, fmt in Image.registered_extensions().items()
+            if Image.MIME.get(fmt, "").startswith("image/")
+        }
+        patterns = " ".join(f"*{ext}" for ext in sorted(ext_map))
+        filetypes = [("Изображения", patterns or "*.png *.jpg *.jpeg *.bmp *.gif *.webp"), ("Все файлы", "*.*")]
+
+        filename = filedialog.askopenfilename(
+            defaultextension=".png",
+            filetypes=filetypes,
+        )
+        if not filename:
+            return False
+
+        source_path = Path(filename)
+        try:
+            image = Image.open(source_path)
+            image.load()
+        except OSError as exc:
+            messagebox.showerror(
+                "Прикрепить изображение",
+                f"Не удалось открыть изображение:\n{exc}",
+            )
+            return True
+
+        card_id = self.selected_card_id or next(iter(self.selected_cards))
+        card = self.cards.get(card_id)
+        if card is None:
+            return True
+
+        try:
+            self._ensure_attachments_dir()
+        except OSError:
+            return True
+
+        attachment_id = max((a.id for a in card.attachments), default=0) + 1
+
+        detected_format = image.format or ext_map.get(source_path.suffix.lower()) or "PNG"
+        mime_type = Image.MIME.get(detected_format, "image/png")
+        if not mime_type.startswith("image/"):
+            detected_format = "PNG"
+            mime_type = "image/png"
+
+        storage_ext = source_path.suffix.lower() if mime_type.startswith("image/") else ".png"
+        if not storage_ext:
+            storage_ext = ".png"
+
+        storage_path = self.attachments_dir / f"{card.id}-{attachment_id}{storage_ext}"
+
+        try:
+            save_image = image.convert("RGBA") if detected_format.upper() == "PNG" else image.convert("RGB")
+            save_image.save(storage_path, format=detected_format)
+        except OSError as exc:
+            messagebox.showerror(
+                "Прикрепить изображение",
+                f"Не удалось сохранить изображение:\n{exc}",
+            )
+            return True
+
+        attachment = Attachment(
+            id=attachment_id,
+            name=source_path.name,
+            source_type="file",
+            mime_type=mime_type,
+            width=image.width,
+            height=image.height,
+            offset_x=0.0,
+            offset_y=0.0,
+            storage_path=str(storage_path.relative_to(Path.cwd())),
+        )
+        card.attachments.append(attachment)
+        self.render_card_attachments(card_id)
+        self.push_history()
+        return True
+
+    def attach_image_from_file(self):
+        self._attach_image_from_file()
 
     def snap_cards_to_grid(self, card_ids):
         if not self.snap_to_grid or not card_ids:

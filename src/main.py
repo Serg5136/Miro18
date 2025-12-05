@@ -35,6 +35,8 @@ class BoardApp:
         self.frames: Dict[int, ModelFrame] = {}
         self.next_frame_id = 1
         self.selected_frame_id = None
+        self.min_frame_width = 150
+        self.min_frame_height = 120
 
         # Выделение карточек
         self.selected_card_id = None
@@ -51,10 +53,13 @@ class BoardApp:
             "last_x": 0,
             "last_y": 0,
             "moved": False,
-            "mode": None,            # "cards", "frame", "resize_card", "connect_drag"
+            "mode": None,            # "cards", "frame", "resize_card", "resize_frame", "connect_drag"
             "frame_id": None,
             "resize_card_id": None,
             "resize_origin": None,   # (x1, y1) левый верх при ресайзе
+            "resize_frame_id": None,
+            "resize_frame_handle": None,
+            "resize_frame_anchor": None,
             "connect_from_card": None,
             "connect_start": None,   # (sx, sy)
             "temp_line_id": None,
@@ -355,6 +360,7 @@ class BoardApp:
         frame_id = self.context_frame_id
         if frame_id is None or frame_id not in self.frames:
             return
+        self.hide_frame_handles(frame_id)
         frame = self.frames.pop(frame_id)
         self.canvas.delete(frame.rect_id)
         self.canvas.delete(frame.title_id)
@@ -1539,6 +1545,13 @@ class BoardApp:
         item_id = item_ids[0]
         tags = self.canvas.gettags(item_id)
         for tag in tags:
+            if tag.startswith("frame_handle_"):
+                parts = tag.split("_")
+                try:
+                    return int(parts[-1])
+                except ValueError:
+                    continue
+        for tag in tags:
             if tag.startswith("frame_"):
                 try:
                     return int(tag.split("_")[1])
@@ -1609,6 +1622,82 @@ class BoardApp:
                 self.canvas.itemconfig(conn.line_id, state=state)
                 if conn.label_id:
                     self.canvas.itemconfig(conn.label_id, state=state)
+
+    # ---------- Хэндлы рамок ----------
+
+    def show_frame_handles(self, frame_id: int):
+        frame = self.frames.get(frame_id)
+        if not frame or not frame.rect_id:
+            return
+
+        self.hide_frame_handles(frame_id)
+        x1, y1, x2, y2 = self.canvas.coords(frame.rect_id)
+        size = 10
+        handles: dict[str, int | None] = {}
+        positions = {
+            "nw": (x1, y1),
+            "ne": (x2, y1),
+            "sw": (x1, y2),
+            "se": (x2, y2),
+        }
+        cursors = {
+            "nw": "top_left_corner",
+            "ne": "top_right_corner",
+            "sw": "bottom_left_corner",
+            "se": "bottom_right_corner",
+        }
+
+        for key, (cx, cy) in positions.items():
+            hx1 = cx - size
+            hy1 = cy - size
+            hx2 = cx
+            hy2 = cy
+            hid = self.canvas.create_rectangle(
+                hx1,
+                hy1,
+                hx2,
+                hy2,
+                fill=self.theme["frame_outline"],
+                outline="",
+                tags=("frame_handle", f"frame_handle_{key}", f"frame_handle_{frame_id}"),
+            )
+            self.canvas.itemconfig(hid, cursor=cursors.get(key, "sizing"))
+            handles[key] = hid
+            self.canvas.tag_raise(hid)
+
+        frame.resize_handles = handles
+
+    def hide_frame_handles(self, frame_id: int | None):
+        if frame_id is None:
+            return
+        frame = self.frames.get(frame_id)
+        if not frame:
+            return
+        for hid in frame.resize_handles.values():
+            if hid:
+                self.canvas.delete(hid)
+        frame.resize_handles.clear()
+
+    def hide_all_frame_handles(self):
+        for fid in list(self.frames.keys()):
+            self.hide_frame_handles(fid)
+
+    def update_frame_handles_positions(self, frame_id: int):
+        frame = self.frames.get(frame_id)
+        if not frame or not frame.rect_id or not frame.resize_handles:
+            return
+        x1, y1, x2, y2 = self.canvas.coords(frame.rect_id)
+        size = 10
+        coords = {
+            "nw": (x1 - size, y1 - size, x1, y1),
+            "ne": (x2 - size, y1 - size, x2, y1),
+            "sw": (x1 - size, y2 - size, x1, y2),
+            "se": (x2 - size, y2 - size, x2, y2),
+        }
+        for key, hid in frame.resize_handles.items():
+            if hid and key in coords:
+                self.canvas.coords(hid, *coords[key])
+                self.canvas.tag_raise(hid)
 
     # ---------- Хэндлы карточек (resize / connect) ----------
 
@@ -1764,6 +1853,12 @@ class BoardApp:
             card.height = y2 - y1
             self.update_card_handles_positions(card.id)
             self.update_card_layout(card.id)
+
+        for frame in self.frames.values():
+            if frame.rect_id:
+                x1, y1, x2, y2 = self.canvas.coords(frame.rect_id)
+                frame.x1, frame.y1, frame.x2, frame.y2 = x1, y1, x2, y2
+                self.update_frame_handles_positions(frame.id)
 
         bbox = self.canvas.bbox("all")
         if bbox:

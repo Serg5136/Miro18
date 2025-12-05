@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "cards": [
+    {
+      "id": 1,
+      "x": 340,
+      "y": 80,
+      "width": 143.0,
+      "height": 40.0,
+      "text": "1",
+      "color": "#80ff00"
+    },
+    {
+      "id": 2,
+      "x": 180,
+      "y": 100,
+      "width": 106.0,
+      "height": 40.0,
+      "text": "11",
+      "color": "#fff9b1"
+    }
+  ],
+  "connections": [],
+  "frames": []
+}

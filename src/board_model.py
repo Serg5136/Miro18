@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal
 
-SCHEMA_VERSION = 2
-SUPPORTED_SCHEMA_VERSIONS = {1, SCHEMA_VERSION}
+SCHEMA_VERSION = 3
+SUPPORTED_SCHEMA_VERSIONS = {1, 2, SCHEMA_VERSION}
 
 
 @dataclass
@@ -20,6 +20,7 @@ class Attachment:
     offset_x: float = 0.0
     offset_y: float = 0.0
     storage_path: str | None = None
+    data_base64: str | None = None
 
     def to_primitive(self) -> Dict[str, Any]:
         return {
@@ -32,6 +33,7 @@ class Attachment:
             "offset_x": self.offset_x,
             "offset_y": self.offset_y,
             "storage_path": self.storage_path,
+            "data_base64": self.data_base64,
         }
 
     @staticmethod
@@ -46,6 +48,7 @@ class Attachment:
             offset_x=data.get("offset_x", 0.0),
             offset_y=data.get("offset_y", 0.0),
             storage_path=data.get("storage_path"),
+            data_base64=data.get("data_base64"),
         )
 
 
@@ -235,7 +238,8 @@ class BoardData:
                   "height": int,
                   "offset_x": float,
                   "offset_y": float,
-                  "storage_path": str | null
+                  "storage_path": str | null,
+                  "data_base64": str | null
                 }, ...
               ]
             }, ...

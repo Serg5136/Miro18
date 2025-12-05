@@ -1,6 +1,9 @@
 import tkinter as tk
+import base64
+import binascii
 from tkinter import colorchooser, filedialog, messagebox, simpledialog
 import copy
+import io
 from pathlib import Path
 from typing import Dict, List
 from .autosave import AutoSaveService
@@ -457,6 +460,7 @@ class BoardApp:
                 height=card.height,
                 text=card.text,
                 color=card.color,
+                attachments=[self._prepare_attachment_for_save(a) for a in card.attachments],
             )
 
         connections: List[ModelConnection] = []
@@ -504,6 +508,7 @@ class BoardApp:
 
         # --- новая часть: используем модель BoardData ---
         board = BoardData.from_primitive(data)
+        self._restore_attachment_files(board)
         self.cards = board.cards
         self.connections = board.connections
         self.frames = board.frames
@@ -613,6 +618,14 @@ class BoardApp:
         self.attachment_items.clear()
         self.attachment_tk_images.clear()
 
+    def _resolve_attachment_path(self, storage_path: str | None) -> Path | None:
+        if not storage_path:
+            return None
+        path = Path(storage_path)
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        return path
+
     def _clear_attachment_previews_for_card(self, card_id: int) -> None:
         to_delete = [key for key in self.attachment_items if key[0] == card_id]
         for key in to_delete:
@@ -632,17 +645,105 @@ class BoardApp:
             )
             return None
 
-        if not attachment.storage_path:
-            return None
-        path = Path(attachment.storage_path)
-        if not path.is_absolute():
-            path = Path.cwd() / path
-        if not path.exists():
+        path = self._resolve_attachment_path(attachment.storage_path)
+        if path and path.exists():
+            try:
+                return Image.open(path)
+            except OSError:
+                return None
+
+        if attachment.data_base64:
+            try:
+                raw = base64.b64decode(attachment.data_base64)
+            except (binascii.Error, ValueError):
+                return None
+            try:
+                return Image.open(io.BytesIO(raw))
+            except OSError:
+                return None
+
+        return None
+
+    def _read_attachment_base64(self, attachment: Attachment) -> str | None:
+        path = self._resolve_attachment_path(attachment.storage_path)
+        if not path or not path.exists():
             return None
         try:
-            return Image.open(path)
+            payload = path.read_bytes()
         except OSError:
             return None
+        return base64.b64encode(payload).decode("ascii")
+
+    def _prepare_attachment_for_save(self, attachment: Attachment) -> Attachment:
+        prepared = copy.copy(attachment)
+        if not prepared.data_base64:
+            data_base64 = self._read_attachment_base64(attachment)
+            if data_base64:
+                prepared.data_base64 = data_base64
+                attachment.data_base64 = data_base64
+        return prepared
+
+    @staticmethod
+    def _extension_from_mime(mime_type: str) -> str:
+        if mime_type.endswith("/jpeg") or mime_type.endswith("/jpg"):
+            return ".jpg"
+        if mime_type.endswith("/png"):
+            return ".png"
+        if mime_type.endswith("/gif"):
+            return ".gif"
+        return ".bin"
+
+    def _materialize_attachment(self, card_id: int, attachment: Attachment) -> bool:
+        path = self._resolve_attachment_path(attachment.storage_path)
+        if path and path.exists():
+            try:
+                attachment.storage_path = str(path.relative_to(Path.cwd()))
+            except ValueError:
+                attachment.storage_path = str(path)
+            return True
+
+        if not attachment.data_base64:
+            return False
+
+        try:
+            self._ensure_attachments_dir()
+        except OSError:
+            return False
+
+        extension = Path(attachment.name).suffix or self._extension_from_mime(
+            attachment.mime_type
+        )
+        target_path = self.attachments_dir / f"{card_id}-{attachment.id}{extension}"
+
+        try:
+            payload = base64.b64decode(attachment.data_base64)
+        except (binascii.Error, ValueError):
+            return False
+
+        try:
+            target_path.write_bytes(payload)
+        except OSError:
+            return False
+
+        attachment.storage_path = str(target_path.relative_to(Path.cwd()))
+        return True
+
+    def _restore_attachment_files(self, board: BoardData) -> None:
+        failed: list[str] = []
+        for card in board.cards.values():
+            for attachment in card.attachments:
+                restored = self._materialize_attachment(card.id, attachment)
+                if not restored:
+                    failed.append(attachment.name)
+
+        if failed:
+            unique = sorted(set(failed))
+            names = "\n".join(unique)
+            messagebox.showwarning(
+                "Вложения",
+                "Не удалось восстановить некоторые вложения (файлы отсутствуют и нет"
+                f" встроенных данных):\n{names}",
+            )
 
     def _prepare_preview_image(self, image):
         max_size = (200, 200)
@@ -776,6 +877,9 @@ class BoardApp:
         try:
             rgb_image = image.convert("RGBA")
             rgb_image.save(storage_path, format="PNG")
+            buffer = io.BytesIO()
+            rgb_image.save(buffer, format="PNG")
+            data_base64 = base64.b64encode(buffer.getvalue()).decode("ascii")
         except OSError as exc:
             messagebox.showerror("Вставка изображения", f"Не удалось сохранить изображение:\n{exc}")
             return True
@@ -790,6 +894,7 @@ class BoardApp:
             offset_x=0.0,
             offset_y=0.0,
             storage_path=str(storage_path.relative_to(Path.cwd())),
+            data_base64=data_base64,
         )
         card.attachments.append(attachment)
         self.render_card_attachments(card_id)

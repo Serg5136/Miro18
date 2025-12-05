@@ -1,10 +1,11 @@
 import tkinter as tk
 from tkinter import simpledialog, colorchooser, messagebox
 import copy
+from pathlib import Path
 from typing import Dict, List
 from .autosave import AutoSaveService
 from .controllers import ConnectController, DragController, SelectionController
-from .board_model import Card as ModelCard, Connection as ModelConnection, Frame as ModelFrame, BoardData
+from .board_model import Card as ModelCard, Connection as ModelConnection, Frame as ModelFrame, BoardData, Attachment
 from .config import THEMES, load_theme_name, save_theme_name
 from .history import History
 from .io import files as file_io
@@ -84,6 +85,11 @@ class BoardApp:
 
         # Буфер обмена (копирование карточек)
         self.clipboard = None  # {"cards":[...], "connections":[...], "center":(x,y)}
+
+        # Вложения
+        self.attachments_dir = Path("attachments")
+        self.attachment_items: Dict[tuple[int, int], int] = {}
+        self.attachment_tk_images: Dict[tuple[int, int], tk.PhotoImage] = {}
 
         # Inline-редактор текста карточек
         self.inline_editor = None
@@ -488,6 +494,7 @@ class BoardApp:
         self.cards.clear()
         self.connections.clear()
         self.frames.clear()
+        self._clear_all_attachment_previews()
         self.selected_card_id = None
         self.selected_cards.clear()
         self.selected_frame_id = None
@@ -555,6 +562,8 @@ class BoardApp:
 
     def render_board(self):
         self.canvas_view.render_board(self.cards, self.frames, self.connections, self.grid_size)
+        self._clear_all_attachment_previews()
+        self.render_all_attachments()
 
     def render_selection(self):
         self.canvas_view.render_selection(
@@ -589,6 +598,204 @@ class BoardApp:
     def set_connect_mode(self, enabled: bool):
         self.connect_controller.set_connect_mode(enabled)
 
+    # ---------- Вложения ----------
+
+    def _ensure_attachments_dir(self) -> None:
+        try:
+            self.attachments_dir.mkdir(exist_ok=True)
+        except OSError as exc:
+            messagebox.showerror("Вложения", f"Не удалось создать папку вложений:\n{exc}")
+            raise
+
+    def _clear_all_attachment_previews(self) -> None:
+        for item_id in self.attachment_items.values():
+            self.canvas.delete(item_id)
+        self.attachment_items.clear()
+        self.attachment_tk_images.clear()
+
+    def _clear_attachment_previews_for_card(self, card_id: int) -> None:
+        to_delete = [key for key in self.attachment_items if key[0] == card_id]
+        for key in to_delete:
+            item_id = self.attachment_items.pop(key, None)
+            if item_id:
+                self.canvas.delete(item_id)
+            self.attachment_tk_images.pop(key, None)
+
+    def _load_attachment_image(self, attachment: Attachment):
+        try:
+            from PIL import Image
+        except ImportError:
+            messagebox.showerror(
+                "Вложения",
+                "Для работы с изображениями нужен пакет Pillow.\n"
+                "Установите его командой:\n\npip install pillow",
+            )
+            return None
+
+        if not attachment.storage_path:
+            return None
+        path = Path(attachment.storage_path)
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        if not path.exists():
+            return None
+        try:
+            return Image.open(path)
+        except OSError:
+            return None
+
+    def _prepare_preview_image(self, image):
+        max_size = (200, 200)
+        copy_image = image.copy()
+        copy_image.thumbnail(max_size)
+        return copy_image.convert("RGBA")
+
+    def render_card_attachments(self, card_id: int) -> None:
+        card = self.cards.get(card_id)
+        if not card or not card.attachments:
+            self._clear_attachment_previews_for_card(card_id)
+            return
+
+        try:
+            from PIL import ImageTk
+        except ImportError:
+            messagebox.showerror(
+                "Вложения",
+                "Для показа изображений нужен пакет Pillow.\n"
+                "Установите его командой:\n\npip install pillow",
+            )
+            return
+
+        self._clear_attachment_previews_for_card(card_id)
+
+        for idx, attachment in enumerate(card.attachments):
+            image = self._load_attachment_image(attachment)
+            if image is None:
+                continue
+            preview = self._prepare_preview_image(image)
+            photo = ImageTk.PhotoImage(preview)
+            offset_y = attachment.offset_y
+            if offset_y == 0:
+                offset_y = card.height / 2 + preview.height / 2 + 10 + idx * (preview.height + 10)
+                attachment.offset_y = offset_y
+            offset_x = attachment.offset_x
+            canvas_x = card.x + offset_x
+            canvas_y = card.y + offset_y
+            item_id = self.canvas.create_image(
+                canvas_x,
+                canvas_y,
+                image=photo,
+                anchor="center",
+                tags=("attachment_preview", f"attachment_{card_id}_{attachment.id}"),
+            )
+            self.attachment_items[(card_id, attachment.id)] = item_id
+            self.attachment_tk_images[(card_id, attachment.id)] = photo
+
+    def render_all_attachments(self) -> None:
+        for card_id in list(self.cards.keys()):
+            self.render_card_attachments(card_id)
+
+    def update_attachment_positions(self, card_id: int, *, scale: float | None = None) -> None:
+        card = self.cards.get(card_id)
+        if not card or not card.attachments:
+            return
+        for attachment in card.attachments:
+            key = (card_id, attachment.id)
+            item_id = self.attachment_items.get(key)
+            if item_id:
+                if scale is not None:
+                    attachment.offset_x *= scale
+                    attachment.offset_y *= scale
+                self.canvas.coords(
+                    item_id,
+                    card.x + attachment.offset_x,
+                    card.y + attachment.offset_y,
+                )
+
+    def _read_clipboard_image(self):
+        try:
+            from PIL import ImageGrab, Image
+        except ImportError:
+            messagebox.showerror(
+                "Вставка изображения",
+                "Для вставки изображения нужен пакет Pillow.\n"
+                "Установите его командой:\n\npip install pillow",
+            )
+            return None
+
+        try:
+            grabbed = ImageGrab.grabclipboard()
+        except Exception:
+            return None
+
+        if grabbed is None:
+            return None
+
+        if isinstance(grabbed, Image.Image):
+            mime = Image.MIME.get(grabbed.format, "image/png")
+            return grabbed, grabbed.format or "PNG", mime, "clipboard.png"
+
+        if isinstance(grabbed, (list, tuple)) and grabbed:
+            first = grabbed[0]
+            path = Path(first)
+            if path.is_file():
+                try:
+                    image = Image.open(path)
+                except OSError:
+                    return None
+                mime = Image.MIME.get(image.format, "image/png")
+                return image, image.format or "PNG", mime, path.name
+        return None
+
+    def _attach_clipboard_image_to_card(self) -> bool:
+        result = self._read_clipboard_image()
+        if result is None:
+            return False
+
+        if not self.selected_cards:
+            messagebox.showwarning(
+                "Вставка изображения",
+                "Выберите карточку, чтобы добавить вложение.",
+            )
+            return True
+
+        card_id = self.selected_card_id or next(iter(self.selected_cards))
+        card = self.cards.get(card_id)
+        if card is None:
+            return True
+
+        image, _fmt, mime_type, name = result
+        try:
+            self._ensure_attachments_dir()
+        except OSError:
+            return True
+
+        attachment_id = max((a.id for a in card.attachments), default=0) + 1
+        storage_path = self.attachments_dir / f"{card.id}-{attachment_id}.png"
+
+        try:
+            rgb_image = image.convert("RGBA")
+            rgb_image.save(storage_path, format="PNG")
+        except OSError as exc:
+            messagebox.showerror("Вставка изображения", f"Не удалось сохранить изображение:\n{exc}")
+            return True
+
+        attachment = Attachment(
+            id=attachment_id,
+            name=name,
+            source_type="clipboard",
+            mime_type=mime_type,
+            width=image.width,
+            height=image.height,
+            offset_x=0.0,
+            offset_y=0.0,
+            storage_path=str(storage_path.relative_to(Path.cwd())),
+        )
+        card.attachments.append(attachment)
+        self.render_card_attachments(card_id)
+        self.push_history()
+        return True
+
     def snap_cards_to_grid(self, card_ids):
         if not self.snap_to_grid or not card_ids:
             return
@@ -612,6 +819,7 @@ class BoardApp:
             self.canvas.coords(card.text_id, gx, gy)
             self.update_card_handles_positions(card_id)
             self.update_connections_for_card(card_id)
+            self.update_attachment_positions(card_id)
 
     # ---------- Карточки ----------
 
@@ -994,6 +1202,7 @@ class BoardApp:
             card.width = x2 - x1
             card.height = y2 - y1
             self.update_card_handles_positions(card.id)
+            self.update_attachment_positions(card.id, scale=scale)
 
         bbox = self.canvas.bbox("all")
         if bbox:
@@ -1225,6 +1434,7 @@ class BoardApp:
             self.canvas.coords(card.text_id, card.x, card.y)
             self.update_card_handles_positions(cid)
             self.update_connections_for_card(cid)
+            self.update_attachment_positions(cid)
     
         self.push_history()
     
@@ -1249,6 +1459,7 @@ class BoardApp:
             self.canvas.coords(card.text_id, card.x, card.y)
             self.update_card_handles_positions(cid)
             self.update_connections_for_card(cid)
+            self.update_attachment_positions(cid)
     
         self.push_history()
     
@@ -1272,6 +1483,7 @@ class BoardApp:
             self.canvas.coords(card.text_id, card.x, card.y)
             self.update_card_handles_positions(cid)
             self.update_connections_for_card(cid)
+            self.update_attachment_positions(cid)
     
         self.push_history()
     
@@ -1294,6 +1506,7 @@ class BoardApp:
             self.canvas.coords(card.text_id, card.x, card.y)
             self.update_card_handles_positions(cid)
             self.update_connections_for_card(cid)
+            self.update_attachment_positions(cid)
     
         self.push_history()
     
@@ -1345,6 +1558,16 @@ class BoardApp:
             card = self.cards.get(card_id)
             if not card:
                 continue
+            for attachment in card.attachments:
+                try:
+                    path = Path(attachment.storage_path)
+                    if not path.is_absolute():
+                        path = Path.cwd() / path
+                    if path.exists():
+                        path.unlink()
+                except Exception:
+                    pass
+            self._clear_attachment_previews_for_card(card_id)
             if card.resize_handle_id:
                 self.canvas.delete(card.resize_handle_id)
             if card.connect_handle_id:
@@ -1394,6 +1617,8 @@ class BoardApp:
         }
 
     def on_paste(self, event=None):
+        if self._attach_clipboard_image_to_card():
+            return
         if not self.clipboard:
             return
         data = self.clipboard

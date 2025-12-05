@@ -152,6 +152,7 @@ class DragController:
                 app.canvas.coords(card.text_id, card.x, card.y)
                 app.update_card_handles_positions(card_id)
                 app.update_connections_for_card(card_id)
+                app.update_attachment_positions(card_id)
                 app.drag_data["moved"] = True
                 return
 
@@ -186,6 +187,7 @@ class DragController:
                     app.canvas.coords(card.text_id, card.x, card.y)
                     app.update_card_handles_positions(card_id)
                     app.update_connections_for_card(card_id)
+                    app.update_attachment_positions(card_id)
 
             elif mode == "frame":
                 frame_id = app.drag_data["frame_id"]
@@ -208,6 +210,7 @@ class DragController:
                     app.canvas.coords(card.text_id, card.x, card.y)
                     app.update_card_handles_positions(card_id)
                     app.update_connections_for_card(card_id)
+                    app.update_attachment_positions(card_id)
 
         elif app.selection_start is not None and app.selection_rect_id is not None:
             x0, y0 = app.selection_start

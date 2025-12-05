@@ -36,7 +36,7 @@ HOTKEYS: List[Hotkey] = [
     Hotkey("undo", ("<Control-z>", "<Control-Z>"), "on_undo"),
     Hotkey("redo", ("<Control-y>", "<Control-Y>"), "on_redo"),
     Hotkey("copy", ("<Control-c>", "<Control-C>"), "on_copy"),
-    Hotkey("paste", ("<Control-v>", "<Control-V>"), "on_paste"),
+    Hotkey("paste", ("<Control-v>", "<Control-V>", "<<Paste>>"), "on_paste"),
     Hotkey("duplicate", ("<Control-d>", "<Control-D>"), "on_duplicate"),
 ]
 

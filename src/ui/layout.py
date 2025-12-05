@@ -28,6 +28,14 @@ class ToolbarFactory:
         btn_redo_toolbar.pack(side="left", padx=2, pady=4)
         app.btn_redo_toolbar = btn_redo_toolbar
         add_tooltip(btn_redo_toolbar, "Повторить отменённое действие")
+
+        btn_attach_image = tk.Button(
+            toolbar,
+            text="📎 Прикрепить изображение",
+            command=app.attach_image_from_file,
+        )
+        btn_attach_image.pack(side="left", padx=(10, 2), pady=4)
+        add_tooltip(btn_attach_image, "Добавить изображение к выделенной карточке")
         return toolbar
 
 

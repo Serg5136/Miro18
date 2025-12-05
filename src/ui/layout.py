@@ -2,8 +2,8 @@ import tkinter as tk
 from typing import Optional
 
 from .sidebar import SidebarFactory
-from .canvas_events import CanvasEventsBinder
 from .tooltips import add_tooltip
+from ..input import EventBinder
 
 
 class ToolbarFactory:
@@ -45,12 +45,12 @@ class LayoutBuilder:
         toolbar_factory: Optional[ToolbarFactory] = None,
         sidebar_factory: Optional[SidebarFactory] = None,
         canvas_factory: Optional[CanvasFactory] = None,
-        events_binder: Optional[CanvasEventsBinder] = None,
+        events_binder: Optional[EventBinder] = None,
     ):
         self.toolbar_factory = toolbar_factory or ToolbarFactory()
         self.sidebar_factory = sidebar_factory or SidebarFactory()
         self.canvas_factory = canvas_factory or CanvasFactory()
-        self.events_binder = events_binder or CanvasEventsBinder()
+        self.events_binder = events_binder or EventBinder()
 
     def configure_root_grid(self, root: tk.Tk) -> None:
         root.rowconfigure(0, weight=0)

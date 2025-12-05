@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal
 
-SCHEMA_VERSION = 3
-SUPPORTED_SCHEMA_VERSIONS = {1, 2, SCHEMA_VERSION}
+SCHEMA_VERSION = 4
+SUPPORTED_SCHEMA_VERSIONS = {1, 2, 3, SCHEMA_VERSION}
 
 
 @dataclass
@@ -19,6 +19,7 @@ class Attachment:
     height: int
     offset_x: float = 0.0
     offset_y: float = 0.0
+    preview_scale: float = 1.0
     storage_path: str | None = None
     data_base64: str | None = None
 
@@ -32,6 +33,7 @@ class Attachment:
             "height": self.height,
             "offset_x": self.offset_x,
             "offset_y": self.offset_y,
+            "preview_scale": self.preview_scale,
             "storage_path": self.storage_path,
             "data_base64": self.data_base64,
         }
@@ -47,6 +49,7 @@ class Attachment:
             height=data.get("height", 0),
             offset_x=data.get("offset_x", 0.0),
             offset_y=data.get("offset_y", 0.0),
+            preview_scale=data.get("preview_scale", 1.0),
             storage_path=data.get("storage_path"),
             data_base64=data.get("data_base64"),
         )

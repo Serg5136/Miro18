@@ -24,6 +24,7 @@ class SelectionController:
         app = self.app
         if app.selected_frame_id is not None:
             app.selected_frame_id = None
+            app.hide_all_frame_handles()
 
         if not additive:
             self.clear_card_selection()
@@ -40,6 +41,9 @@ class SelectionController:
 
     def select_frame(self, frame_id: int | None) -> None:
         self.clear_card_selection()
+        self.app.hide_all_frame_handles()
         self.app.selected_frame_id = frame_id
+        if frame_id is not None and frame_id in self.app.frames:
+            self.app.show_frame_handles(frame_id)
         self.app.render_selection()
         self.app.update_controls_state()

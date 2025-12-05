@@ -162,6 +162,7 @@ class Frame:
     # UI поля (не сериализуются)
     rect_id: int | None = None
     title_id: int | None = None
+    resize_handles: Dict[str, int | None] = field(default_factory=dict)
 
     def to_primitive(self) -> Dict[str, Any]:
         """Сериализация рамки в dict для JSON."""

@@ -54,6 +54,27 @@ class DragController:
                 )
             return
 
+        if "frame_handle" in tags:
+            frame_id = app.get_frame_id_from_item(item)
+            if frame_id is not None:
+                app.selection_controller.select_frame(frame_id)
+                x1, y1, x2, y2 = app.canvas.coords(app.frames[frame_id].rect_id)
+                handle_dir = next((t.split("_")[2] for t in tags if t.startswith("frame_handle_") and len(t.split("_")) == 3), None)
+                anchor = (x1, y1)
+                if handle_dir == "ne":
+                    anchor = (x1, y2)
+                elif handle_dir == "sw":
+                    anchor = (x2, y1)
+                elif handle_dir == "se":
+                    anchor = (x1, y1)
+                app.drag_data["dragging"] = True
+                app.drag_data["mode"] = "resize_frame"
+                app.drag_data["resize_frame_id"] = frame_id
+                app.drag_data["resize_frame_handle"] = handle_dir
+                app.drag_data["resize_frame_anchor"] = anchor
+                app.drag_data["moved"] = False
+            return
+
         card_id = app.get_card_id_from_item(item)
         frame_id = app.get_frame_id_from_item(item)
 
@@ -77,6 +98,9 @@ class DragController:
         app.drag_data["frame_id"] = None
         app.drag_data["resize_card_id"] = None
         app.drag_data["resize_origin"] = None
+        app.drag_data["resize_frame_id"] = None
+        app.drag_data["resize_frame_handle"] = None
+        app.drag_data["resize_frame_anchor"] = None
         app.drag_data["connect_from_card"] = None
         if app.drag_data["temp_line_id"]:
             app.canvas.delete(app.drag_data["temp_line_id"])
@@ -155,6 +179,43 @@ class DragController:
                 app.drag_data["moved"] = True
                 return
 
+            if mode == "resize_frame":
+                frame_id = app.drag_data["resize_frame_id"]
+                frame = app.frames.get(frame_id)
+                handle = app.drag_data["resize_frame_handle"]
+                anchor = app.drag_data["resize_frame_anchor"]
+                if not frame or not frame.rect_id or anchor is None:
+                    return
+                ax, ay = anchor
+                min_w = app.min_frame_width
+                min_h = app.min_frame_height
+
+                if handle == "nw":
+                    new_x1 = min(cx, ax - min_w)
+                    new_y1 = min(cy, ay - min_h)
+                    new_x2, new_y2 = ax, ay
+                elif handle == "ne":
+                    new_x1, new_y2 = ax, ay
+                    new_x2 = max(cx, ax + min_w)
+                    new_y1 = min(cy, ay - min_h)
+                elif handle == "sw":
+                    new_x2, new_y1 = ax, ay
+                    new_x1 = min(cx, ax - min_w)
+                    new_y2 = max(cy, ay + min_h)
+                else:  # "se" и запасной вариант
+                    new_x1, new_y1 = ax, ay
+                    new_x2 = max(cx, ax + min_w)
+                    new_y2 = max(cy, ay + min_h)
+
+                app.canvas.coords(frame.rect_id, new_x1, new_y1, new_x2, new_y2)
+                if frame.title_id:
+                    app.canvas.coords(frame.title_id, new_x1 + 10, new_y1 + 15)
+                frame.x1, frame.y1, frame.x2, frame.y2 = new_x1, new_y1, new_x2, new_y2
+                app.update_frame_handles_positions(frame_id)
+                app.update_minimap()
+                app.drag_data["moved"] = True
+                return
+
             if mode == "connect_drag":
                 line_id = app.drag_data["temp_line_id"]
                 if line_id:
@@ -193,6 +254,10 @@ class DragController:
                 if frame:
                     app.canvas.move(frame.rect_id, dx, dy)
                     app.canvas.move(frame.title_id, dx, dy)
+                    x1, y1, x2, y2 = app.canvas.coords(frame.rect_id)
+                    frame.x1, frame.y1, frame.x2, frame.y2 = x1, y1, x2, y2
+                    app.update_frame_handles_positions(frame_id)
+                    app.update_minimap()
 
                 for card_id in app.drag_data["dragged_cards"]:
                     card = app.cards.get(card_id)
@@ -250,6 +315,17 @@ class DragController:
             app.drag_data["resize_card_id"] = None
             app.drag_data["resize_origin"] = None
             app.drag_data["dragged_cards"] = set()
+            app.drag_data["moved"] = False
+            return
+
+        if mode == "resize_frame":
+            if app.drag_data["moved"]:
+                app.push_history()
+            app.drag_data["dragging"] = False
+            app.drag_data["mode"] = None
+            app.drag_data["resize_frame_id"] = None
+            app.drag_data["resize_frame_handle"] = None
+            app.drag_data["resize_frame_anchor"] = None
             app.drag_data["moved"] = False
             return
 

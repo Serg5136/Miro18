@@ -22,6 +22,7 @@ MOUSE_BINDINGS: List[MouseBinding] = [
     MouseBinding("<Button-1>", "on_canvas_click"),
     MouseBinding("<B1-Motion>", "on_mouse_drag"),
     MouseBinding("<ButtonRelease-1>", "on_mouse_release"),
+    MouseBinding("<Motion>", "on_mouse_move"),
     MouseBinding("<ButtonPress-2>", "start_pan"),
     MouseBinding("<B2-Motion>", "do_pan"),
     MouseBinding("<Button-3>", "on_canvas_right_click"),

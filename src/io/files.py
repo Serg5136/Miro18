@@ -85,7 +85,7 @@ def export_png(
     frames: Dict[int, Any],
     connections: Iterable[Any],
     theme: Dict[str, Any],
-    connection_anchor_fn: Callable[[Any, Any], tuple[float, float, float, float]],
+    connection_anchor_fn: Callable[[Any, Any, Any | None], tuple[float, float, float, float]],
 ) -> bool:
     """Экспортирует содержимое доски в PNG через диалог выбора файла."""
 
@@ -175,7 +175,7 @@ def export_png(
         to_card = cards.get(conn.to_id)
         if not from_card or not to_card:
             continue
-        sx, sy, tx, ty = connection_anchor_fn(from_card, to_card)
+        sx, sy, tx, ty = connection_anchor_fn(from_card, to_card, conn)
         msx, msy = map_xy(sx, sy)
         mtx, mty = map_xy(tx, ty)
         draw.line([msx, msy, mtx, mty], fill=theme["connection"], width=2)

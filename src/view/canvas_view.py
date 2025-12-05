@@ -172,30 +172,49 @@ class CanvasView:
         frame.rect_id = rect_id
         frame.title_id = title_id
 
-    def _connection_anchors(self, from_card: Card, to_card: Card) -> Sequence[float]:
-        x1, y1 = from_card.x, from_card.y
-        x2, y2 = to_card.x, to_card.y
-        dx = x2 - x1
-        dy = y2 - y1
+    def card_handle_positions(self, card: Card) -> Dict[str, tuple[float, float]]:
+        half_w = card.width / 2
+        half_h = card.height / 2
+        return {
+            "n": (card.x, card.y - half_h),
+            "e": (card.x + half_w, card.y),
+            "s": (card.x, card.y + half_h),
+            "w": (card.x - half_w, card.y),
+        }
 
+    def _auto_anchors(self, from_card: Card, to_card: Card) -> tuple[str, str]:
+        dx = to_card.x - from_card.x
+        dy = to_card.y - from_card.y
         if abs(dx) > abs(dy):
-            sx = x1 + (from_card.width / 2) * (1 if dx > 0 else -1)
-            sy = y1
-        else:
-            sx = x1
-            sy = y1 + (from_card.height / 2) * (1 if dy > 0 else -1)
+            return ("e" if dx > 0 else "w", "w" if dx > 0 else "e")
+        return ("s" if dy > 0 else "n", "n" if dy > 0 else "s")
 
-        if abs(dx) > abs(dy):
-            tx = x2 - (to_card.width / 2) * (1 if dx > 0 else -1)
-            ty = y2
-        else:
-            tx = x2
-            ty = y2 - (to_card.height / 2) * (1 if dy > 0 else -1)
+    def _resolve_anchor(
+        self, card: Card, preferred: str | None, fallback: str
+    ) -> tuple[str, tuple[float, float]]:
+        positions = self.card_handle_positions(card)
+        anchor = preferred if preferred in positions else fallback
+        return anchor, positions[anchor]
+
+    def _connection_anchors(
+        self, from_card: Card, to_card: Card, connection: Connection | None = None
+    ) -> Sequence[float]:
+        default_from, default_to = self._auto_anchors(from_card, to_card)
+        from_anchor, (sx, sy) = self._resolve_anchor(
+            from_card, getattr(connection, "from_anchor", None), default_from
+        )
+        to_anchor, (tx, ty) = self._resolve_anchor(
+            to_card, getattr(connection, "to_anchor", None), default_to
+        )
+
+        if connection is not None:
+            connection.from_anchor = from_anchor
+            connection.to_anchor = to_anchor
 
         return sx, sy, tx, ty
 
     def draw_connection(self, connection: Connection, from_card: Card, to_card: Card) -> None:
-        sx, sy, tx, ty = self._connection_anchors(from_card, to_card)
+        sx, sy, tx, ty = self._connection_anchors(from_card, to_card, connection)
 
         line_id = self.canvas.create_line(
             sx,
@@ -237,7 +256,7 @@ class CanvasView:
             to_card = cards.get(conn.to_id)
             if from_card is None or to_card is None:
                 continue
-            sx, sy, tx, ty = self._connection_anchors(from_card, to_card)
+            sx, sy, tx, ty = self._connection_anchors(from_card, to_card, conn)
             if conn.line_id:
                 self.canvas.coords(conn.line_id, sx, sy, tx, ty)
             if conn.label_id:

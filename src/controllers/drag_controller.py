@@ -38,11 +38,20 @@ class DragController:
             if card_id is not None:
                 app.selection_controller.select_card(card_id, additive=False)
                 card = app.cards[card_id]
-                sx = card.x + card.width / 2
-                sy = card.y
+                anchor = next(
+                    (
+                        tag.split("_")[2]
+                        for tag in tags
+                        if tag.startswith("connect_handle_") and len(tag.split("_")) == 3
+                    ),
+                    None,
+                )
+                positions = app._card_handle_positions(card)
+                sx, sy = positions.get(anchor, (card.x + card.width / 2, card.y))
                 app.drag_data["dragging"] = True
                 app.drag_data["mode"] = "connect_drag"
                 app.drag_data["connect_from_card"] = card_id
+                app.drag_data["connect_from_anchor"] = anchor
                 app.drag_data["connect_start"] = (sx, sy)
                 app.drag_data["temp_line_id"] = app.canvas.create_line(
                     sx, sy, sx, sy,
@@ -102,6 +111,7 @@ class DragController:
         app.drag_data["resize_frame_handle"] = None
         app.drag_data["resize_frame_anchor"] = None
         app.drag_data["connect_from_card"] = None
+        app.drag_data["connect_from_anchor"] = None
         if app.drag_data["temp_line_id"]:
             app.canvas.delete(app.drag_data["temp_line_id"])
         app.drag_data["temp_line_id"] = None
@@ -286,6 +296,7 @@ class DragController:
 
         if mode == "connect_drag":
             from_id = app.drag_data["connect_from_card"]
+            from_anchor = app.drag_data.get("connect_from_anchor")
             if app.drag_data["temp_line_id"]:
                 app.canvas.delete(app.drag_data["temp_line_id"])
             target_id = None
@@ -296,12 +307,22 @@ class DragController:
                     target_id = cid
                     break
             if from_id is not None and target_id is not None and target_id != from_id:
-                app.create_connection(from_id, target_id)
+                target_card = app.cards.get(target_id)
+                target_anchor = None
+                if target_card:
+                    target_anchor = app._closest_card_anchor(target_card, cx, cy)
+                app.create_connection(
+                    from_id,
+                    target_id,
+                    from_anchor=from_anchor,
+                    to_anchor=target_anchor,
+                )
                 app.push_history()
 
             app.drag_data["dragging"] = False
             app.drag_data["mode"] = None
             app.drag_data["connect_from_card"] = None
+            app.drag_data["connect_from_anchor"] = None
             app.drag_data["temp_line_id"] = None
             app.drag_data["moved"] = False
             return

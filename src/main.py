@@ -61,9 +61,13 @@ class BoardApp:
             "resize_frame_handle": None,
             "resize_frame_anchor": None,
             "connect_from_card": None,
+            "connect_from_anchor": None,
             "connect_start": None,   # (sx, sy)
             "temp_line_id": None,
         }
+
+        # Hover
+        self.hover_card_id = None
 
         # Режим соединения (кнопкой)
         self.connect_mode = False
@@ -514,6 +518,8 @@ class BoardApp:
                     from_id=conn.from_id,
                     to_id=conn.to_id,
                     label=conn.label,
+                    from_anchor=conn.from_anchor,
+                    to_anchor=conn.to_anchor,
                 )
             )
 
@@ -1471,7 +1477,7 @@ class BoardApp:
             card.text_bg_id,
             card.image_id,
             card.resize_handle_id,
-            card.connect_handle_id,
+            *card.connect_handles.values(),
         ):
             if item_id:
                 self.canvas.delete(item_id)
@@ -1614,8 +1620,9 @@ class BoardApp:
             self.canvas.itemconfig(card.text_id, state=state)
             if card.resize_handle_id:
                 self.canvas.itemconfig(card.resize_handle_id, state=state)
-            if card.connect_handle_id:
-                self.canvas.itemconfig(card.connect_handle_id, state=state)
+            for hid in card.connect_handles.values():
+                if hid:
+                    self.canvas.itemconfig(hid, state=state)
 
         for conn in self.connections:
             if conn.from_id in cards_in_frame or conn.to_id in cards_in_frame:
@@ -1701,7 +1708,18 @@ class BoardApp:
 
     # ---------- Хэндлы карточек (resize / connect) ----------
 
-    def show_card_handles(self, card_id):
+    def _card_handle_positions(self, card: ModelCard) -> Dict[str, tuple[float, float]]:
+        return self.canvas_view.card_handle_positions(card)
+
+    def _closest_card_anchor(self, card: ModelCard, x: float, y: float) -> str:
+        positions = self._card_handle_positions(card)
+        anchor, _ = min(
+            positions.items(),
+            key=lambda item: (item[1][0] - x) ** 2 + (item[1][1] - y) ** 2,
+        )
+        return anchor
+
+    def show_card_handles(self, card_id: int, *, include_resize: bool = True):
         card = self.cards.get(card_id)
         if not card:
             return
@@ -1714,47 +1732,56 @@ class BoardApp:
         x2 = x + w / 2
         y2 = y + h / 2
 
-        # Resize handle (square внизу справа)
-        if not card.resize_handle_id:
+        if include_resize and not card.resize_handle_id:
             size = 10
             rx1 = x2 - size
             ry1 = y2 - size
             rx2 = x2
             ry2 = y2
             rid = self.canvas.create_rectangle(
-                rx1, ry1, rx2, ry2,
+                rx1,
+                ry1,
+                rx2,
+                ry2,
                 fill=self.theme["connection"],
                 outline="",
-                tags=("resize_handle", f"card_{card_id}")
+                tags=("resize_handle", f"card_{card_id}"),
             )
             card.resize_handle_id = rid
 
-        # Connect handle (circle справа по центру)
-        if not card.connect_handle_id:
-            r = 6
-            cx = x2
-            cy = y
-            cid = self.canvas.create_oval(
-                cx - r, cy - r, cx + r, cy + r,
-                fill=self.theme["connection"],
-                outline="",
-                tags=("connect_handle", f"card_{card_id}")
-            )
-            card.connect_handle_id = cid
+        positions = self._card_handle_positions(card)
+        r = 5
+        for anchor, (cx, cy) in positions.items():
+            existing_id = card.connect_handles.get(anchor)
+            if existing_id is None:
+                hid = self.canvas.create_oval(
+                    cx - r,
+                    cy - r,
+                    cx + r,
+                    cy + r,
+                    fill=self.theme["connection"],
+                    outline="",
+                    tags=("connect_handle", f"connect_handle_{anchor}", f"card_{card_id}"),
+                )
+                card.connect_handles[anchor] = hid
+            else:
+                hid = existing_id
+            self.canvas.tag_raise(hid)
 
-        self.canvas.tag_raise(card.resize_handle_id)
-        self.canvas.tag_raise(card.connect_handle_id)
+        if card.resize_handle_id:
+            self.canvas.tag_raise(card.resize_handle_id)
 
-    def hide_card_handles(self, card_id):
+    def hide_card_handles(self, card_id: int, *, include_resize: bool = True):
         card = self.cards.get(card_id)
         if not card:
             return
-        if card.resize_handle_id:
+        if include_resize and card.resize_handle_id:
             self.canvas.delete(card.resize_handle_id)
             card.resize_handle_id = None
-        if card.connect_handle_id:
-            self.canvas.delete(card.connect_handle_id)
-            card.connect_handle_id = None
+        for anchor, hid in list(card.connect_handles.items()):
+            if hid:
+                self.canvas.delete(hid)
+            card.connect_handles.pop(anchor, None)
 
     def update_card_layout(self, card_id: int, *, redraw_attachment: bool = True) -> None:
         card = self.cards.get(card_id)
@@ -1774,14 +1801,10 @@ class BoardApp:
         card = self.cards.get(card_id)
         if not card:
             return
-        x = card.x
-        y = card.y
         w = card.width
         h = card.height
-        x1 = x - w / 2
-        y1 = y - h / 2
-        x2 = x + w / 2
-        y2 = y + h / 2
+        x2 = card.x + w / 2
+        y2 = card.y + h / 2
 
         if card.resize_handle_id:
             size = 10
@@ -1791,12 +1814,13 @@ class BoardApp:
             ry2 = y2
             self.canvas.coords(card.resize_handle_id, rx1, ry1, rx2, ry2)
 
-        if card.connect_handle_id:
-            r = 6
-            cx = x2
-            cy = y
-            self.canvas.coords(card.connect_handle_id,
-                               cx - r, cy - r, cx + r, cy + r)
+        positions = self._card_handle_positions(card)
+        r = 5
+        for anchor, (cx, cy) in positions.items():
+            hid = card.connect_handles.get(anchor)
+            if hid:
+                self.canvas.coords(hid, cx - r, cy - r, cx + r, cy + r)
+                self.canvas.tag_raise(hid)
 
     # ---------- Выделение карточек ----------
 
@@ -1816,6 +1840,29 @@ class BoardApp:
 
     def on_mouse_release(self, event):
         return self.drag_controller.on_mouse_release(event)
+
+    def on_mouse_move(self, event):
+        if self.drag_data["dragging"]:
+            return
+        cx = self.canvas.canvasx(event.x)
+        cy = self.canvas.canvasy(event.y)
+        items = self.canvas.find_overlapping(cx, cy, cx, cy)
+        card_id = None
+        for it in items:
+            cid = self.get_card_id_from_item((it,))
+            if cid is not None:
+                card_id = cid
+                break
+
+        if card_id == self.hover_card_id:
+            return
+
+        if self.hover_card_id is not None and self.hover_card_id not in self.selected_cards:
+            self.hide_card_handles(self.hover_card_id, include_resize=False)
+
+        self.hover_card_id = card_id
+        if card_id is not None and card_id not in self.selected_cards:
+            self.show_card_handles(card_id, include_resize=False)
 
     def start_pan(self, event):
         self.canvas.scan_mark(event.x, event.y)
@@ -1876,29 +1923,18 @@ class BoardApp:
                 return conn
         return None
 
-    def _connection_anchors(self, from_card, to_card):
-        x1, y1 = from_card.x, from_card.y
-        x2, y2 = to_card.x, to_card.y
-        dx = x2 - x1
-        dy = y2 - y1
+    def _connection_anchors(self, from_card, to_card, connection=None):
+        return self.canvas_view._connection_anchors(from_card, to_card, connection)
 
-        if abs(dx) > abs(dy):
-            sx = x1 + (from_card.width / 2) * (1 if dx > 0 else -1)
-            sy = y1
-        else:
-            sx = x1
-            sy = y1 + (from_card.height / 2) * (1 if dy > 0 else -1)
-
-        if abs(dx) > abs(dy):
-            tx = x2 - (to_card.width / 2) * (1 if dx > 0 else -1)
-            ty = y2
-        else:
-            tx = x2
-            ty = y2 - (to_card.height / 2) * (1 if dy > 0 else -1)
-
-        return sx, sy, tx, ty
-
-    def create_connection(self, from_id, to_id, label=""):
+    def create_connection(
+        self,
+        from_id,
+        to_id,
+        label: str = "",
+        *,
+        from_anchor: str | None = None,
+        to_anchor: str | None = None,
+    ):
         if from_id not in self.cards or to_id not in self.cards:
             return
         card_from = self.cards[from_id]
@@ -1908,6 +1944,8 @@ class BoardApp:
             from_id=from_id,
             to_id=to_id,
             label=label,
+            from_anchor=from_anchor,
+            to_anchor=to_anchor,
         )
         self.canvas_view.draw_connection(connection, card_from, card_to)
         self.connections.append(connection)
@@ -2234,8 +2272,9 @@ class BoardApp:
             self._clear_attachment_previews_for_card(card_id)
             if card.resize_handle_id:
                 self.canvas.delete(card.resize_handle_id)
-            if card.connect_handle_id:
-                self.canvas.delete(card.connect_handle_id)
+            for hid in card.connect_handles.values():
+                if hid:
+                    self.canvas.delete(hid)
             self.canvas.delete(card.rect_id)
             self.canvas.delete(card.text_id)
             del self.cards[card_id]

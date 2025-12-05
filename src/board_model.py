@@ -74,7 +74,7 @@ class Card:
     text_bg_id: int | None = None
     image_id: int | None = None
     resize_handle_id: int | None = None
-    connect_handle_id: int | None = None
+    connect_handles: Dict[str, int | None] = field(default_factory=dict)
 
     def to_primitive(self) -> Dict[str, Any]:
         """Сериализация карточки в dict для JSON."""
@@ -116,6 +116,9 @@ class Connection:
     to_id: int
     label: str = ""
 
+    from_anchor: str | None = None
+    to_anchor: str | None = None
+
     # UI поля (не сериализуются)
     line_id: int | None = None
     label_id: int | None = None
@@ -123,11 +126,16 @@ class Connection:
     def to_primitive(self) -> Dict[str, Any]:
         """Сериализация связи в dict для JSON."""
 
-        return {
+        payload = {
             "from": self.from_id,
             "to": self.to_id,
             "label": self.label,
         }
+        if self.from_anchor is not None:
+            payload["from_anchor"] = self.from_anchor
+        if self.to_anchor is not None:
+            payload["to_anchor"] = self.to_anchor
+        return payload
 
     @staticmethod
     def from_primitive(data: Dict[str, Any]) -> "Connection":
@@ -142,6 +150,8 @@ class Connection:
             from_id=from_raw,
             to_id=to_raw,
             label=data.get("label", ""),
+            from_anchor=data.get("from_anchor"),
+            to_anchor=data.get("to_anchor"),
         )
 
 

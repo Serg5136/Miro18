@@ -8,8 +8,9 @@ from typing import Dict, List, Any
 class Card:
     """
     Логическая модель карточки без привязки к Tkinter.
-    Используется только для сериализации/десериализации.
+    Используется и в рантайме, и для сериализации.
     """
+
     id: int
     x: float
     y: float
@@ -18,15 +19,77 @@ class Card:
     text: str = ""
     color: str = "#fff9b1"
 
+    # UI поля (не сериализуются)
+    rect_id: int | None = None
+    text_id: int | None = None
+    resize_handle_id: int | None = None
+    connect_handle_id: int | None = None
+
+    def to_primitive(self) -> Dict[str, Any]:
+        """Сериализация карточки в dict для JSON."""
+
+        return {
+            "id": self.id,
+            "x": self.x,
+            "y": self.y,
+            "width": self.width,
+            "height": self.height,
+            "text": self.text,
+            "color": self.color,
+        }
+
+    @staticmethod
+    def from_primitive(data: Dict[str, Any]) -> "Card":
+        """Десериализация карточки из dict."""
+
+        return Card(
+            id=data["id"],
+            x=data["x"],
+            y=data["y"],
+            width=data["width"],
+            height=data["height"],
+            text=data.get("text", ""),
+            color=data.get("color", "#fff9b1"),
+        )
+
 
 @dataclass
 class Connection:
     """
     Логическая модель связи между карточками.
     """
+
     from_id: int
     to_id: int
     label: str = ""
+
+    # UI поля (не сериализуются)
+    line_id: int | None = None
+    label_id: int | None = None
+
+    def to_primitive(self) -> Dict[str, Any]:
+        """Сериализация связи в dict для JSON."""
+
+        return {
+            "from": self.from_id,
+            "to": self.to_id,
+            "label": self.label,
+        }
+
+    @staticmethod
+    def from_primitive(data: Dict[str, Any]) -> "Connection":
+        """Десериализация связи из dict, поддерживает старые ключи."""
+
+        from_raw = data.get("from", data.get("from_id"))
+        to_raw = data.get("to", data.get("to_id"))
+        if from_raw is None or to_raw is None:
+            raise ValueError("Connection data is missing required endpoints")
+
+        return Connection(
+            from_id=from_raw,
+            to_id=to_raw,
+            label=data.get("label", ""),
+        )
 
 
 @dataclass
@@ -34,6 +97,7 @@ class Frame:
     """
     Логическая модель рамки (группы карточек).
     """
+
     id: int
     x1: float
     y1: float
@@ -41,6 +105,37 @@ class Frame:
     y2: float
     title: str = "Группа"
     collapsed: bool = False
+
+    # UI поля (не сериализуются)
+    rect_id: int | None = None
+    title_id: int | None = None
+
+    def to_primitive(self) -> Dict[str, Any]:
+        """Сериализация рамки в dict для JSON."""
+
+        return {
+            "id": self.id,
+            "x1": self.x1,
+            "y1": self.y1,
+            "x2": self.x2,
+            "y2": self.y2,
+            "title": self.title,
+            "collapsed": self.collapsed,
+        }
+
+    @staticmethod
+    def from_primitive(data: Dict[str, Any]) -> "Frame":
+        """Десериализация рамки из dict."""
+
+        return Frame(
+            id=data["id"],
+            x1=data["x1"],
+            y1=data["y1"],
+            x2=data["x2"],
+            y2=data["y2"],
+            title=data.get("title", "Группа"),
+            collapsed=data.get("collapsed", False),
+        )
 
 
 @dataclass
@@ -59,38 +154,9 @@ class BoardData:
         """
         return {
             "schema_version": 1,
-            "cards": [
-                {
-                    "id": c.id,
-                    "x": c.x,
-                    "y": c.y,
-                    "width": c.width,
-                    "height": c.height,
-                    "text": c.text,
-                    "color": c.color,
-                }
-                for c in self.cards.values()
-            ],
-            "connections": [
-                {
-                    "from": conn.from_id,
-                    "to": conn.to_id,
-                    "label": conn.label,
-                }
-                for conn in self.connections
-            ],
-            "frames": [
-                {
-                    "id": f.id,
-                    "x1": f.x1,
-                    "y1": f.y1,
-                    "x2": f.x2,
-                    "y2": f.y2,
-                    "title": f.title,
-                    "collapsed": f.collapsed,
-                }
-                for f in self.frames.values()
-            ],
+            "cards": [c.to_primitive() for c in self.cards.values()],
+            "connections": [conn.to_primitive() for conn in self.connections],
+            "frames": [f.to_primitive() for f in self.frames.values()],
         }
 
     @staticmethod
@@ -136,45 +202,22 @@ class BoardData:
         # Карточки
         cards: Dict[int, Card] = {}
         for c in data.get("cards", []):
-            card = Card(
-                id=c["id"],
-                x=c["x"],
-                y=c["y"],
-                width=c["width"],
-                height=c["height"],
-                text=c.get("text", ""),
-                color=c.get("color", "#fff9b1"),
-            )
+            card = Card.from_primitive(c)
             cards[card.id] = card
 
         # Связи (поддержка старых ключей from_id/to_id)
         connections: List[Connection] = []
         for c in data.get("connections", []):
-            from_raw = c.get("from", c.get("from_id"))
-            to_raw = c.get("to", c.get("to_id"))
-            if from_raw is None or to_raw is None:
+            try:
+                connections.append(Connection.from_primitive(c))
+            except ValueError:
                 # Битые записи пропускаем, чтобы не падать на старых файлах
                 continue
-            connections.append(
-                Connection(
-                    from_id=from_raw,
-                    to_id=to_raw,
-                    label=c.get("label", ""),
-                )
-            )
 
         # Рамки
         frames: Dict[int, Frame] = {}
         for f in data.get("frames", []):
-            frame = Frame(
-                id=f["id"],
-                x1=f["x1"],
-                y1=f["y1"],
-                x2=f["x2"],
-                y2=f["y2"],
-                title=f.get("title", "Группа"),
-                collapsed=f.get("collapsed", False),
-            )
+            frame = Frame.from_primitive(f)
             frames[frame.id] = frame
 
         return BoardData(cards=cards, connections=connections, frames=frames)

@@ -12,6 +12,7 @@ class SelectionController:
 
     def clear_card_selection(self) -> None:
         app = self.app
+        app.clear_attachment_selection()
         for cid in list(app.selected_cards):
             if cid in app.cards:
                 app.hide_card_handles(cid)
@@ -30,6 +31,8 @@ class SelectionController:
             self.clear_card_selection()
 
         if card_id is not None and card_id in app.cards:
+            if app.selected_attachment and app.selected_attachment[0] != card_id:
+                app.clear_attachment_selection()
             app.selected_cards.add(card_id)
             app.selected_card_id = card_id
             app.show_card_handles(card_id)
@@ -42,6 +45,7 @@ class SelectionController:
     def select_frame(self, frame_id: int | None) -> None:
         self.clear_card_selection()
         self.app.hide_all_frame_handles()
+        self.app.clear_attachment_selection()
         self.app.selected_frame_id = frame_id
         if frame_id is not None and frame_id in self.app.frames:
             self.app.show_frame_handles(frame_id)

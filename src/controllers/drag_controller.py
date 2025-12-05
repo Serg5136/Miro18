@@ -33,6 +33,35 @@ class DragController:
                 app.drag_data["dragged_cards"] = {card_id}
             return
 
+        if "attachment_resize_handle" in tags:
+            target_tag = next((t for t in tags if t.startswith("attachment_") and len(t.split("_")) == 3), None)
+            handle_tag = next((t for t in tags if t.startswith("attachment_handle_") and len(t.split("_")) == 3), None)
+            if target_tag and handle_tag:
+                _, card_raw, attachment_raw = target_tag.split("_", 2)
+                _, _, anchor = handle_tag.split("_", 2)
+                try:
+                    card_id = int(card_raw)
+                    attachment_id = int(attachment_raw)
+                except ValueError:
+                    return
+                app.select_attachment(card_id, attachment_id)
+                key = (card_id, attachment_id)
+                item_id = app.attachment_items.get(key)
+                bbox = app.canvas.bbox(item_id) if item_id else None
+                if not bbox:
+                    return
+                center = ((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2)
+                app.drag_data["dragging"] = True
+                app.drag_data["mode"] = "resize_attachment"
+                app.drag_data["resize_attachment"] = {
+                    "card_id": card_id,
+                    "attachment_id": attachment_id,
+                    "anchor": anchor,
+                    "center": center,
+                }
+                app.drag_data["moved"] = False
+            return
+
         if "connect_handle" in tags:
             card_id = app.get_card_id_from_item(item)
             if card_id is not None:
@@ -110,6 +139,7 @@ class DragController:
         app.drag_data["resize_frame_id"] = None
         app.drag_data["resize_frame_handle"] = None
         app.drag_data["resize_frame_anchor"] = None
+        app.drag_data["resize_attachment"] = None
         app.drag_data["connect_from_card"] = None
         app.drag_data["connect_from_anchor"] = None
         if app.drag_data["temp_line_id"]:
@@ -186,6 +216,34 @@ class DragController:
                 app.update_card_layout(card_id)
                 app.update_card_handles_positions(card_id)
                 app.update_connections_for_card(card_id)
+                app.drag_data["moved"] = True
+                return
+
+            if mode == "resize_attachment":
+                resize_data = app.drag_data.get("resize_attachment")
+                if not resize_data:
+                    return
+                card_id = resize_data.get("card_id")
+                attachment_id = resize_data.get("attachment_id")
+                center = resize_data.get("center")
+                if not center:
+                    return
+                _, attachment = app._get_attachment(card_id, attachment_id)
+                if not attachment:
+                    return
+                center_x, center_y = center
+                new_w = max(abs(cx - center_x) * 2, 1)
+                new_h = max(abs(cy - center_y) * 2, 1)
+                base_w = max(attachment.width, 1)
+                base_h = max(attachment.height, 1)
+                width_scale = new_w / base_w
+                height_scale = new_h / base_h
+                new_scale = max(width_scale, height_scale)
+                new_scale = max(0.1, min(new_scale, 10.0))
+                attachment.preview_scale = new_scale
+                app.render_card_attachments(card_id)
+                app._show_attachment_selection(card_id, attachment)
+                app.update_minimap()
                 app.drag_data["moved"] = True
                 return
 
@@ -347,6 +405,16 @@ class DragController:
             app.drag_data["resize_frame_id"] = None
             app.drag_data["resize_frame_handle"] = None
             app.drag_data["resize_frame_anchor"] = None
+            app.drag_data["moved"] = False
+            return
+
+        if mode == "resize_attachment":
+            if app.drag_data["moved"]:
+                app.push_history()
+                app.update_minimap()
+            app.drag_data["dragging"] = False
+            app.drag_data["mode"] = None
+            app.drag_data["resize_attachment"] = None
             app.drag_data["moved"] = False
             return
 

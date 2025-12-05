@@ -9,24 +9,27 @@ import copy
 class SnapshotCommand:
     """
     Простейшая команда: хранит состояние ДО и ПОСЛЕ.
-    Undo/Redo просто подставляют снапшот борда.
+    apply/rollback подставляют соответствующий снапшот борда.
     В дальнейшем можно добавлять более "тонкие" команды.
     """
+
     before: Dict[str, Any]
     after: Dict[str, Any]
 
-    def undo(self, app) -> Dict[str, Any]:
+    def rollback(self, app) -> Dict[str, Any]:
         """
         Откатить состояние борда к before.
         """
+
         state = copy.deepcopy(self.before)
         app.set_board_from_data(state)
         return state
 
-    def redo(self, app) -> Dict[str, Any]:
+    def apply(self, app) -> Dict[str, Any]:
         """
         Применить состояние after.
         """
+
         state = copy.deepcopy(self.after)
         app.set_board_from_data(state)
         return state
@@ -108,13 +111,15 @@ class History:
     def undo(self, app) -> Optional[Dict[str, Any]]:
         if not self.can_undo():
             return None
+
         cmd = self.commands[self.index]
         self.index -= 1
-        return cmd.undo(app)
+        return cmd.rollback(app)
 
     def redo(self, app) -> Optional[Dict[str, Any]]:
         if not self.can_redo():
             return None
+
         self.index += 1
         cmd = self.commands[self.index]
-        return cmd.redo(app)
+        return cmd.apply(app)

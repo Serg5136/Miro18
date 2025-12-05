@@ -1,11 +1,12 @@
 import tkinter as tk
 from tkinter import simpledialog, colorchooser, filedialog, messagebox
 import json
-import os
 import copy
 from typing import Dict, List
+from .autosave import AutoSaveService
 from .board_model import Card as ModelCard, Connection as ModelConnection, Frame as ModelFrame, BoardData
 from .config import THEMES, load_theme_name, save_theme_name
+from .history import History
 from .ui import LayoutBuilder
 
 class BoardApp:
@@ -69,11 +70,10 @@ class BoardApp:
         self.var_grid_size = tk.IntVar(value=self.grid_size)
 
         # История (Undo/Redo) и автосохранение
-        self.history = []
-        self.history_index = -1
-        self.last_saved_history_index = -1
+        self.history = History()
+        self.saved_history_index = -1
         self.unsaved_changes = False
-        self.autosave_filename = "_mini_miro_autosave.json"
+        self.autosave_service = AutoSaveService()
 
         # Буфер обмена (копирование карточек)
         self.clipboard = None  # {"cards":[...], "connections":[...], "center":(x,y)}
@@ -382,20 +382,19 @@ class BoardApp:
         restored = False
 
         # Попытка восстановиться из автосейва
-        if os.path.exists(self.autosave_filename):
+        if self.autosave_service.exists():
             res = messagebox.askyesnocancel(
                 "Автовосстановление",
                 "Найден файл автосохранения.\n"
-                "Восстановить последний сеанс?"
+                "Восстановить последний сеанс?",
             )
             if res:  # Да
                 try:
-                    with open(self.autosave_filename, "r", encoding="utf-8") as f:
-                        data = json.load(f)
+                    data = self.autosave_service.load()
                     self.set_board_from_data(data)
-                    self.history = [copy.deepcopy(data)]
-                    self.history_index = 0
-                    self.last_saved_history_index = -1
+                    self.history.clear_and_init(self.get_board_data())
+                    self.saved_history_index = -1
+                    self.push_history()
                     restored = True
                 except Exception as e:
                     messagebox.showerror("Ошибка автозагрузки", str(e))
@@ -421,13 +420,10 @@ class BoardApp:
             self.next_card_id = 1
             self.next_frame_id = 1
 
-            self.history = []
-            self.history_index = -1
-            self.last_saved_history_index = -1
-
+            self.history.clear_and_init(self.get_board_data())
             self.draw_grid()
             self.push_history()
-            self.last_saved_history_index = self.history_index
+            self.saved_history_index = self.history.index
 
         self.update_unsaved_flag()
         self.update_minimap()
@@ -541,45 +537,38 @@ class BoardApp:
 
     def push_history(self):
         state = self.get_board_data()
-        if self.history_index < len(self.history) - 1:
-            self.history = self.history[:self.history_index + 1]
-
-        self.history.append(copy.deepcopy(state))
-        self.history_index = len(self.history) - 1
+        self.history.push(state)
         self.update_unsaved_flag()
-        self.write_autosave()
+        self.write_autosave(state)
         self.update_minimap()
 
     def on_undo(self, event=None):
-        if self.history_index > 0:
-            self.history_index -= 1
-            state = copy.deepcopy(self.history[self.history_index])
-            self.set_board_from_data(state)
-            self.update_unsaved_flag()
-            self.write_autosave()
-            self.update_minimap()
+        state = self.history.undo(self)
+        if state is None:
+            return
+        self.update_unsaved_flag()
+        self.write_autosave(state)
+        self.update_minimap()
 
     def on_redo(self, event=None):
-        if self.history_index < len(self.history) - 1:
-            self.history_index += 1
-            state = copy.deepcopy(self.history[self.history_index])
-            self.set_board_from_data(state)
-            self.update_unsaved_flag()
-            self.write_autosave()
-            self.update_minimap()
+        state = self.history.redo(self)
+        if state is None:
+            return
+        self.update_unsaved_flag()
+        self.write_autosave(state)
+        self.update_minimap()
 
     def update_unsaved_flag(self):
-        self.unsaved_changes = (self.history_index != self.last_saved_history_index)
+        self.unsaved_changes = (self.history.index != self.saved_history_index)
         title = "Mini Miro Board (Python)"
         if self.unsaved_changes:
             title += " *"
         self.root.title(title)
 
-    def write_autosave(self):
+    def write_autosave(self, state=None):
         try:
-            data = self.get_board_data()
-            with open(self.autosave_filename, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            data = state if state is not None else self.get_board_data()
+            self.autosave_service.save(data)
         except Exception:
             pass
 
@@ -1853,7 +1842,7 @@ class BoardApp:
         try:
             with open(filename, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-            self.last_saved_history_index = self.history_index
+            self.saved_history_index = self.history.index
             self.update_unsaved_flag()
         except Exception as e:
             messagebox.showerror("Ошибка сохранения", str(e))
@@ -1874,11 +1863,11 @@ class BoardApp:
 
         self.set_board_from_data(data)
         state = self.get_board_data()
-        self.history = [copy.deepcopy(state)]
-        self.history_index = 0
-        self.last_saved_history_index = 0
+        self.history.clear_and_init(state)
+        self.push_history()
+        self.saved_history_index = self.history.index
         self.update_unsaved_flag()
-        self.write_autosave()
+        self.write_autosave(state)
         self.update_minimap()
 
     # ---------- Экспорт в PNG (как было раньше) ----------

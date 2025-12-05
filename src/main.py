@@ -60,6 +60,7 @@ class BoardApp:
             "resize_frame_id": None,
             "resize_frame_handle": None,
             "resize_frame_anchor": None,
+            "resize_attachment": None,
             "connect_from_card": None,
             "connect_from_anchor": None,
             "connect_start": None,   # (sx, sy)
@@ -103,6 +104,9 @@ class BoardApp:
         self.attachments_dir = Path("attachments")
         self.attachment_items: Dict[tuple[int, int], int] = {}
         self.attachment_tk_images: Dict[tuple[int, int], tk.PhotoImage] = {}
+        self.selected_attachment: tuple[int, int] | None = None
+        self.attachment_selection_box_id: int | None = None
+        self.attachment_resize_handles: Dict[str, int | None] = {}
 
         # Inline-редактор текста карточек
         self.inline_editor = None
@@ -625,6 +629,16 @@ class BoardApp:
             self.cards, self.frames, self.selected_cards, self.selected_frame_id
         )
 
+    def clear_attachment_selection(self) -> None:
+        if self.attachment_selection_box_id:
+            self.canvas.delete(self.attachment_selection_box_id)
+        self.attachment_selection_box_id = None
+        for hid in self.attachment_resize_handles.values():
+            if hid:
+                self.canvas.delete(hid)
+        self.attachment_resize_handles.clear()
+        self.selected_attachment = None
+
     def update_controls_state(self):
         has_card_selection = bool(self.selected_cards)
         has_frame_selection = self.selected_frame_id is not None
@@ -667,6 +681,7 @@ class BoardApp:
             self.canvas.delete(item_id)
         self.attachment_items.clear()
         self.attachment_tk_images.clear()
+        self.clear_attachment_selection()
 
     def _resolve_attachment_path(self, storage_path: str | None) -> Path | None:
         if not storage_path:
@@ -687,6 +702,8 @@ class BoardApp:
             if item_id:
                 self.canvas.delete(item_id)
             self.attachment_tk_images.pop(key, None)
+        if self.selected_attachment and self.selected_attachment[0] == card_id:
+            self.clear_attachment_selection()
 
     def _load_attachment_image(self, attachment: Attachment):
         try:
@@ -933,8 +950,18 @@ class BoardApp:
             copy_image.thumbnail(max_size)
         return copy_image.convert("RGBA")
 
-    def _prepare_icon_image(self, image):
-        return self._prepare_preview_image(image, max_size=(64, 64), crop_to_square=True)
+    def _resize_image(self, image, size: tuple[int, int]):
+        try:
+            from PIL import Image
+        except ImportError:
+            return None
+        resample = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
+        return image.copy().resize(size, resample=resample).convert("RGBA")
+
+    def _prepare_icon_image(self, image, preview_scale: float = 1.0):
+        base = max(image.width, image.height)
+        target = max(1, int(base * preview_scale))
+        return self._prepare_preview_image(image, max_size=(target, target), crop_to_square=True)
 
     def _compute_attachment_offset(self, card: ModelCard, thumb_size: tuple[int, int], idx: int) -> tuple[float, float]:
         padding = 6
@@ -944,6 +971,93 @@ class BoardApp:
         offset_x = -card.width / 2 + padding + thumb_size[0] / 2 + col * (thumb_size[0] + padding)
         offset_y = -card.height / 2 + padding + thumb_size[1] / 2 + row * (thumb_size[1] + padding)
         return offset_x, offset_y
+
+    def select_attachment(self, card_id: int | None, attachment_id: int | None) -> None:
+        if card_id is None or attachment_id is None:
+            self.clear_attachment_selection()
+            self.update_controls_state()
+            return
+
+        card, attachment = self._get_attachment(card_id, attachment_id)
+        if not card or not attachment:
+            self.clear_attachment_selection()
+            self.update_controls_state()
+            return
+
+        self.selection_controller.select_card(card_id, additive=False)
+        self.selected_attachment = (card_id, attachment_id)
+        self._show_attachment_selection(card_id, attachment)
+        self.update_controls_state()
+
+    def _show_attachment_selection(self, card_id: int, attachment: Attachment) -> None:
+        if not attachment:
+            return
+        key = (card_id, attachment.id)
+        item_id = self.attachment_items.get(key)
+        if not item_id:
+            return
+        bbox = self.canvas.bbox(item_id)
+        if not bbox:
+            return
+        padding = 6
+        x1, y1, x2, y2 = bbox
+        x1 -= padding
+        y1 -= padding
+        x2 += padding
+        y2 += padding
+
+        if self.attachment_selection_box_id:
+            self.canvas.coords(self.attachment_selection_box_id, x1, y1, x2, y2)
+        else:
+            self.attachment_selection_box_id = self.canvas.create_rectangle(
+                x1,
+                y1,
+                x2,
+                y2,
+                outline=self.theme["connection"],
+                dash=(3, 2),
+                width=2,
+                tags=("attachment_selection", f"attachment_{card_id}_{attachment.id}"),
+            )
+
+        handle_size = 8
+        corners = {
+            "nw": (x1, y1),
+            "ne": (x2, y1),
+            "sw": (x1, y2),
+            "se": (x2, y2),
+        }
+        for anchor, (cx, cy) in corners.items():
+            existing = self.attachment_resize_handles.get(anchor)
+            hx1 = cx - handle_size / 2
+            hy1 = cy - handle_size / 2
+            hx2 = cx + handle_size / 2
+            hy2 = cy + handle_size / 2
+            if existing:
+                self.canvas.coords(existing, hx1, hy1, hx2, hy2)
+                self.canvas.tag_raise(existing)
+            else:
+                hid = self.canvas.create_rectangle(
+                    hx1,
+                    hy1,
+                    hx2,
+                    hy2,
+                    fill=self.theme["connection"],
+                    outline="white",
+                    width=1,
+                    tags=(
+                        "attachment_resize_handle",
+                        f"attachment_handle_{anchor}",
+                        f"attachment_{card_id}_{attachment.id}",
+                    ),
+                )
+                self.attachment_resize_handles[anchor] = hid
+
+        if self.attachment_selection_box_id:
+            self.canvas.tag_raise(self.attachment_selection_box_id)
+        for hid in self.attachment_resize_handles.values():
+            if hid:
+                self.canvas.tag_raise(hid)
 
     def _compute_image_card_size(self, image) -> tuple[float, float]:
         padding = 40
@@ -1027,6 +1141,24 @@ class BoardApp:
                     attachment_id = int(attachment_raw)
                 except (ValueError, IndexError):
                     return "break"
+                self.select_attachment(card_id, attachment_id)
+                return "break"
+        return "break"
+
+    def on_attachment_double_click(self, event):
+        item = event.widget.find_withtag("current")
+        item_id = item[0] if item else None
+        if not item_id:
+            return "break"
+        tags = event.widget.gettags(item_id)
+        for tag in tags:
+            if tag.startswith("attachment_"):
+                try:
+                    _prefix, card_raw, attachment_raw = tag.split("_", 2)
+                    card_id = int(card_raw)
+                    attachment_id = int(attachment_raw)
+                except (ValueError, IndexError):
+                    return "break"
                 self.open_attachment_viewer(card_id, attachment_id)
                 return "break"
         return "break"
@@ -1060,7 +1192,14 @@ class BoardApp:
         if max_width <= 0 or max_height <= 0:
             return
 
-        preview = self._prepare_preview_image(image, max_size=(max_width, max_height))
+        target_width = max(1, int(image.width * attachment.preview_scale))
+        target_height = max(1, int(image.height * attachment.preview_scale))
+        scale_limit = min(max_width / target_width, max_height / target_height, 1)
+        if scale_limit <= 0:
+            return
+        final_width = max(1, int(target_width * scale_limit))
+        final_height = max(1, int(target_height * scale_limit))
+        preview = self._resize_image(image, (final_width, final_height))
         if preview is None:
             return
         photo = ImageTk.PhotoImage(preview)
@@ -1080,6 +1219,11 @@ class BoardApp:
             "<Button-1>",
             self.on_attachment_click,
         )
+        self.canvas.tag_bind(
+            f"attachment_{card_id}_{attachment.id}",
+            "<Double-Button-1>",
+            self.on_attachment_double_click,
+        )
         self.attachment_items[(card_id, attachment.id)] = item_id
         self.attachment_tk_images[(card_id, attachment.id)] = photo
         card.image_id = item_id
@@ -1087,6 +1231,8 @@ class BoardApp:
             self.canvas.tag_raise(card.text_bg_id)
         if card.text_id:
             self.canvas.tag_raise(card.text_id)
+        if self.selected_attachment == (card_id, attachment.id):
+            self._show_attachment_selection(card_id, attachment)
 
     def render_all_attachments(self) -> None:
         for card_id in list(self.cards.keys()):
@@ -1849,6 +1995,8 @@ class BoardApp:
             self.canvas.coords(card.image_id, card.x, center_y)
             if card.text_bg_id:
                 self.canvas.tag_lower(card.image_id, card.text_bg_id)
+            if self.selected_attachment == (card_id, card.attachments[0].id):
+                self._show_attachment_selection(card_id, card.attachments[0])
 
     def update_card_handles_positions(self, card_id):
         card = self.cards.get(card_id)

@@ -745,11 +745,88 @@ class BoardApp:
                 f" встроенных данных):\n{names}",
             )
 
-    def _prepare_preview_image(self, image):
-        max_size = (200, 200)
+    def _prepare_preview_image(self, image, *, max_size=(200, 200), crop_to_square: bool = False):
         copy_image = image.copy()
-        copy_image.thumbnail(max_size)
+        if crop_to_square:
+            try:
+                from PIL import Image, ImageOps
+            except ImportError:
+                return None
+            resample = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
+            copy_image = ImageOps.fit(copy_image, max_size, method=resample)
+        else:
+            copy_image.thumbnail(max_size)
         return copy_image.convert("RGBA")
+
+    def _prepare_icon_image(self, image):
+        return self._prepare_preview_image(image, max_size=(64, 64), crop_to_square=True)
+
+    def _compute_attachment_offset(self, card: ModelCard, thumb_size: tuple[int, int], idx: int) -> tuple[float, float]:
+        padding = 6
+        per_row = max(int((card.width - padding) // (thumb_size[0] + padding)), 1)
+        col = idx % per_row
+        row = idx // per_row
+        offset_x = -card.width / 2 + padding + thumb_size[0] / 2 + col * (thumb_size[0] + padding)
+        offset_y = -card.height / 2 + padding + thumb_size[1] / 2 + row * (thumb_size[1] + padding)
+        return offset_x, offset_y
+
+    def _get_attachment(self, card_id: int, attachment_id: int) -> tuple[ModelCard | None, Attachment | None]:
+        card = self.cards.get(card_id)
+        if not card:
+            return None, None
+        for attachment in card.attachments:
+            if attachment.id == attachment_id:
+                return card, attachment
+        return card, None
+
+    def open_attachment_viewer(self, card_id: int, attachment_id: int) -> None:
+        card, attachment = self._get_attachment(card_id, attachment_id)
+        if not card or not attachment:
+            return
+        image = self._load_attachment_image(attachment)
+        if image is None:
+            messagebox.showwarning("Вложения", "Не удалось загрузить вложение для просмотра.")
+            return
+        try:
+            from PIL import ImageTk
+        except ImportError:
+            messagebox.showerror(
+                "Вложения",
+                "Для показа изображений нужен пакет Pillow.\n"
+                "Установите его командой:\n\npip install pillow",
+            )
+            return
+
+        max_width = max(self.root.winfo_screenwidth() - 200, 300)
+        max_height = max(self.root.winfo_screenheight() - 200, 300)
+        preview = image.copy()
+        preview.thumbnail((max_width, max_height))
+        photo = ImageTk.PhotoImage(preview)
+
+        viewer = tk.Toplevel(self.root)
+        viewer.title(attachment.name or "Вложение")
+        viewer.geometry(f"{photo.width()}x{photo.height()}")
+        label = tk.Label(viewer, image=photo, bg="black")
+        label.image = photo
+        label.pack(fill="both", expand=True)
+
+    def on_attachment_click(self, event):
+        item = event.widget.find_withtag("current")
+        item_id = item[0] if item else None
+        if not item_id:
+            return "break"
+        tags = event.widget.gettags(item_id)
+        for tag in tags:
+            if tag.startswith("attachment_"):
+                try:
+                    _prefix, card_raw, attachment_raw = tag.split("_", 2)
+                    card_id = int(card_raw)
+                    attachment_id = int(attachment_raw)
+                except (ValueError, IndexError):
+                    return "break"
+                self.open_attachment_viewer(card_id, attachment_id)
+                return "break"
+        return "break"
 
     def render_card_attachments(self, card_id: int) -> None:
         card = self.cards.get(card_id)
@@ -773,13 +850,16 @@ class BoardApp:
             image = self._load_attachment_image(attachment)
             if image is None:
                 continue
-            preview = self._prepare_preview_image(image)
+            preview = self._prepare_icon_image(image)
+            if preview is None:
+                continue
             photo = ImageTk.PhotoImage(preview)
-            offset_y = attachment.offset_y
-            if offset_y == 0:
-                offset_y = card.height / 2 + preview.height / 2 + 10 + idx * (preview.height + 10)
-                attachment.offset_y = offset_y
             offset_x = attachment.offset_x
+            offset_y = attachment.offset_y
+            if offset_x == 0 and offset_y == 0:
+                offset_x, offset_y = self._compute_attachment_offset(card, preview.size, idx)
+                attachment.offset_x = offset_x
+                attachment.offset_y = offset_y
             canvas_x = card.x + offset_x
             canvas_y = card.y + offset_y
             item_id = self.canvas.create_image(
@@ -788,6 +868,11 @@ class BoardApp:
                 image=photo,
                 anchor="center",
                 tags=("attachment_preview", f"attachment_{card_id}_{attachment.id}"),
+            )
+            self.canvas.tag_bind(
+                f"attachment_{card_id}_{attachment.id}",
+                "<Button-1>",
+                self.on_attachment_click,
             )
             self.attachment_items[(card_id, attachment.id)] = item_id
             self.attachment_tk_images[(card_id, attachment.id)] = photo

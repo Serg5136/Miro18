@@ -2000,7 +2000,9 @@ class BoardApp:
                 outline="",
                 tags=("frame_handle", f"frame_handle_{key}", f"frame_handle_{frame_id}"),
             )
-            self.canvas.itemconfig(hid, cursor=cursors.get(key, "sizing"))
+            cursor = cursors.get(key, "sizing")
+            self.canvas.tag_bind(hid, "<Enter>", lambda _event, cur=cursor: self.canvas.config(cursor=cur))
+            self.canvas.tag_bind(hid, "<Leave>", lambda _event: self.canvas.config(cursor=""))
             handles[key] = hid
             self.canvas.tag_raise(hid)
 
@@ -2015,6 +2017,7 @@ class BoardApp:
         for hid in frame.resize_handles.values():
             if hid:
                 self.canvas.delete(hid)
+        self.canvas.config(cursor="")
         frame.resize_handles.clear()
 
     def hide_all_frame_handles(self):

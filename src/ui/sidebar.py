@@ -93,6 +93,16 @@ class SidebarFactory:
         tk.Label(sidebar, text="Сетка", bg="#f0f0f0",
                  font=("Arial", 12, "bold")).pack(pady=(20, 5))
 
+        chk_show_grid = tk.Checkbutton(
+            sidebar,
+            text="Показывать сетку",
+            variable=app.var_show_grid,
+            bg="#f0f0f0",
+            command=app.on_toggle_show_grid,
+        )
+        chk_show_grid.pack(fill="x", padx=10, pady=2)
+        add_tooltip(chk_show_grid, "Отобразить или скрыть сетку на холсте")
+
         chk_snap = tk.Checkbutton(
             sidebar,
             text="Привязка к сетке",

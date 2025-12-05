@@ -1041,11 +1041,12 @@ class BoardApp:
 
     def _resize_image(self, image, size: tuple[int, int]):
         try:
-            from PIL import Image
+            from PIL import Image, ImageOps
         except ImportError:
             return None
         resample = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
-        return image.copy().resize(size, resample=resample).convert("RGBA")
+        contained = ImageOps.contain(image.copy(), size, method=resample)
+        return contained.convert("RGBA")
 
     def _prepare_icon_image(self, image, preview_scale: float = 1.0):
         base = max(image.width, image.height)

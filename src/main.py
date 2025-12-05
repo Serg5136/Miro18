@@ -49,6 +49,7 @@ class BoardApp:
         # Выделение карточек
         self.selected_card_id = None
         self.selected_cards = set()
+        self.selected_connection: ModelConnection | None = None
 
         # Прямоугольник выделения (lasso)
         self.selection_rect_id = None
@@ -290,6 +291,7 @@ class BoardApp:
             conn = self.get_connection_from_item(item_id)
             if conn is not None:
                 self.context_connection = conn
+                self.select_connection(conn)
                 self.connection_menu.tk_popup(event.x_root, event.y_root)
                 return
     
@@ -443,14 +445,23 @@ class BoardApp:
         conn = self.context_connection
         if not conn:
             return
-        self.canvas.delete(conn.line_id)
-        if conn.label_id:
-            self.canvas.delete(conn.label_id)
+        self._delete_connection(conn)
+        self.push_history()
+
+    def _delete_connection(self, connection: ModelConnection) -> None:
+        self.canvas.delete(connection.line_id)
+        if connection.label_id:
+            self.canvas.delete(connection.label_id)
         try:
-            self.connections.remove(conn)
+            self.connections.remove(connection)
         except ValueError:
             pass
-        self.push_history()
+        if connection is self.selected_connection:
+            self.selected_connection = None
+        if connection is self.context_connection:
+            self.context_connection = None
+        self.render_selection()
+        self.update_controls_state()
     
     def _context_add_card_here(self):
         text_value = simpledialog.askstring(
@@ -500,6 +511,7 @@ class BoardApp:
             self.selected_card_id = None
             self.selected_cards.clear()
             self.selected_frame_id = None
+            self.selected_connection = None
             self.set_connect_mode(False)
             self.zoom_factor = 1.0
             self.canvas.config(scrollregion=(0, 0, 4000, 4000),
@@ -575,6 +587,7 @@ class BoardApp:
         self.selected_card_id = None
         self.selected_cards.clear()
         self.selected_frame_id = None
+        self.selected_connection = None
         self.set_connect_mode(False)
         self.zoom_factor = 1.0
         self.canvas.config(scrollregion=(0, 0, 4000, 4000), bg=self.theme["bg"])
@@ -647,8 +660,33 @@ class BoardApp:
 
     def render_selection(self):
         self.canvas_view.render_selection(
-            self.cards, self.frames, self.selected_cards, self.selected_frame_id
+            self.cards,
+            self.frames,
+            self.selected_cards,
+            self.selected_frame_id,
+            self.connections,
+            self.selected_connection,
         )
+
+    def clear_connection_selection(self) -> None:
+        if self.selected_connection is None:
+            return
+        self.selected_connection = None
+        self.context_connection = None
+        self.render_selection()
+        self.update_controls_state()
+
+    def select_connection(self, connection: ModelConnection | None) -> None:
+        if connection is None:
+            self.clear_connection_selection()
+            return
+
+        self.selection_controller.select_frame(None)
+        self.selection_controller.select_card(None, additive=False)
+        self.selected_connection = connection
+        self.context_connection = connection
+        self.render_selection()
+        self.update_controls_state()
 
     def clear_attachment_selection(self) -> None:
         if self.attachment_selection_box_id:
@@ -1772,6 +1810,7 @@ class BoardApp:
         # Двойной клик по связи — редактируем подпись
         conn = self.get_connection_from_item(item_id)
         if conn is not None:
+            self.select_connection(conn)
             current_label = conn.label
             new_label = simpledialog.askstring(
                 "Подпись связи",
@@ -2527,6 +2566,13 @@ class BoardApp:
         conn.toggle_direction()
         self.canvas_view.apply_connection_direction(conn)
         self.push_history()
+
+    def toggle_selected_connection_direction(self, event=None):
+        if not self.selected_connection:
+            return
+        self.selected_connection.toggle_direction()
+        self.canvas_view.apply_connection_direction(self.selected_connection)
+        self.push_history()
     
     def _require_multiple_selected_cards(self):
         cards = [cid for cid in self.selected_cards if cid in self.cards]
@@ -2724,19 +2770,22 @@ class BoardApp:
     # ---------- Удаление карточек ----------
 
     def delete_selected_cards(self, event=None):
+        deleted_anything = False
+        if self.selected_connection:
+            self._delete_connection(self.selected_connection)
+            self.selected_connection = None
+            deleted_anything = True
+
         if not self.selected_cards:
+            if deleted_anything:
+                self.push_history()
             return
         to_delete = list(self.selected_cards)
 
-        new_connections = []
-        for conn in self.connections:
+        for conn in list(self.connections):
             if conn.from_id in to_delete or conn.to_id in to_delete:
-                self.canvas.delete(conn.line_id)
-                if conn.label_id:
-                    self.canvas.delete(conn.label_id)
-            else:
-                new_connections.append(conn)
-        self.connections = new_connections
+                self._delete_connection(conn)
+                deleted_anything = True
 
         for card_id in to_delete:
             card = self.cards.get(card_id)

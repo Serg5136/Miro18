@@ -18,6 +18,11 @@ class DragController:
         item_id = item[0] if item else None
         tags = app.canvas.gettags(item_id) if item_id else ()
 
+        conn = app.get_connection_from_item(item_id)
+        if conn is not None:
+            app.select_connection(conn)
+            return "break"
+
         if "resize_handle" in tags:
             card_id = app.get_card_id_from_item(item)
             if card_id is not None:

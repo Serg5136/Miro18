@@ -116,6 +116,9 @@ class BoardApp:
         self.selected_attachment: tuple[int, int] | None = None
         self.attachment_selection_box_id: int | None = None
         self.attachment_resize_handles: Dict[str, int | None] = {}
+        self.attachment_fit_mode: str = "contain"
+        self.attachment_min_aspect_ratio = 0.5
+        self.attachment_max_aspect_ratio = 2.0
 
         # Inline-редактор текста карточек
         self.inline_editor = None
@@ -1042,14 +1045,18 @@ class BoardApp:
             copy_image.thumbnail(max_size)
         return copy_image.convert("RGBA")
 
-    def _resize_image(self, image, size: tuple[int, int]):
+    def _resize_image(self, image, size: tuple[int, int], *, fit_mode: str = "contain"):
         try:
             from PIL import Image, ImageOps
         except ImportError:
             return None
         resample = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
-        contained = ImageOps.contain(image.copy(), size, method=resample)
-        return contained.convert("RGBA")
+        copied = image.copy()
+        if fit_mode == "cover":
+            fitted = ImageOps.fit(copied, size, method=resample)
+        else:
+            fitted = ImageOps.contain(copied, size, method=resample)
+        return fitted.convert("RGBA")
 
     def _prepare_icon_image(self, image, preview_scale: float = 1.0):
         base = max(image.width, image.height)
@@ -1072,6 +1079,16 @@ class BoardApp:
             return 0, 0
         final_width = max(1, int(target_width * scale_limit))
         final_height = max(1, int(target_height * scale_limit))
+        aspect = final_width / final_height if final_height else 0
+        if self.attachment_max_aspect_ratio and aspect > self.attachment_max_aspect_ratio:
+            final_width = int(final_height * self.attachment_max_aspect_ratio)
+        elif self.attachment_min_aspect_ratio and aspect < self.attachment_min_aspect_ratio:
+            final_height = int(final_width / self.attachment_min_aspect_ratio)
+
+        final_width = min(final_width, max_width)
+        final_height = min(final_height, max_height)
+        if final_width <= 0 or final_height <= 0:
+            return 0, 0
         return final_width, final_height
 
     def _clamp_attachment_offset(
@@ -1370,7 +1387,8 @@ class BoardApp:
                 continue
 
             self._clamp_attachment_offset(attachment, (final_width, final_height), layout)
-            preview = self._resize_image(image, (final_width, final_height))
+            fit_mode = self.attachment_fit_mode if self.attachment_fit_mode in {"contain", "cover"} else "contain"
+            preview = self._resize_image(image, (final_width, final_height), fit_mode=fit_mode)
             if preview is None:
                 continue
             photo = ImageTk.PhotoImage(preview)

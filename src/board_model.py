@@ -127,6 +127,10 @@ def bulk_update_card_colors(
     return updated
 
 
+VALID_CONNECTION_DIRECTIONS = {"start", "end"}
+DEFAULT_CONNECTION_DIRECTION = "end"
+
+
 @dataclass
 class Connection:
     """
@@ -136,6 +140,7 @@ class Connection:
     from_id: int
     to_id: int
     label: str = ""
+    direction: str = DEFAULT_CONNECTION_DIRECTION
 
     from_anchor: str | None = None
     to_anchor: str | None = None
@@ -151,12 +156,19 @@ class Connection:
             "from": self.from_id,
             "to": self.to_id,
             "label": self.label,
+            "direction": self.direction,
         }
         if self.from_anchor is not None:
             payload["from_anchor"] = self.from_anchor
         if self.to_anchor is not None:
             payload["to_anchor"] = self.to_anchor
         return payload
+
+    @staticmethod
+    def _normalize_direction(direction: str | None) -> str:
+        if direction in VALID_CONNECTION_DIRECTIONS:
+            return direction
+        return DEFAULT_CONNECTION_DIRECTION
 
     @staticmethod
     def from_primitive(data: Dict[str, Any]) -> "Connection":
@@ -171,9 +183,13 @@ class Connection:
             from_id=from_raw,
             to_id=to_raw,
             label=data.get("label", ""),
+            direction=Connection._normalize_direction(data.get("direction")),
             from_anchor=data.get("from_anchor"),
             to_anchor=data.get("to_anchor"),
         )
+
+    def toggle_direction(self) -> None:
+        self.direction = "start" if self.direction == "end" else "end"
 
 
 @dataclass

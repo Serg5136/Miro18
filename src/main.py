@@ -13,6 +13,7 @@ from .board_model import (
     BoardData,
     Card as ModelCard,
     Connection as ModelConnection,
+    DEFAULT_CONNECTION_DIRECTION,
     Frame as ModelFrame,
     bulk_update_card_colors,
 )
@@ -226,6 +227,10 @@ class BoardApp:
         self.connection_menu.add_command(
             label="Редактировать подпись",
             command=self._context_edit_connection_label,
+        )
+        self.connection_menu.add_command(
+            label="Поменять направление",
+            command=self._context_toggle_connection_direction,
         )
         self.connection_menu.add_command(
             label="Удалить связь",
@@ -529,6 +534,7 @@ class BoardApp:
                     from_id=conn.from_id,
                     to_id=conn.to_id,
                     label=conn.label,
+                    direction=conn.direction,
                     from_anchor=conn.from_anchor,
                     to_anchor=conn.to_anchor,
                 )
@@ -2280,16 +2286,22 @@ class BoardApp:
         *,
         from_anchor: str | None = None,
         to_anchor: str | None = None,
+        direction: str = DEFAULT_CONNECTION_DIRECTION,
     ):
         if from_id not in self.cards or to_id not in self.cards:
             return
         card_from = self.cards[from_id]
         card_to = self.cards[to_id]
 
+        normalized_direction = (
+            direction if direction in {"start", "end"} else DEFAULT_CONNECTION_DIRECTION
+        )
+
         connection = ModelConnection(
             from_id=from_id,
             to_id=to_id,
             label=label,
+            direction=normalized_direction,
             from_anchor=from_anchor,
             to_anchor=to_anchor,
         )
@@ -2462,6 +2474,14 @@ class BoardApp:
         self.canvas.itemconfig(card.text_id, text=new_text)
         self.update_card_layout(card_id)
 
+        self.push_history()
+
+    def _context_toggle_connection_direction(self):
+        conn = self.context_connection
+        if not conn:
+            return
+        conn.toggle_direction()
+        self.canvas_view.apply_connection_direction(conn)
         self.push_history()
     
     def _require_multiple_selected_cards(self):
@@ -2666,6 +2686,9 @@ class BoardApp:
                     "from": conn.from_id,
                     "to": conn.to_id,
                     "label": conn.label,
+                    "direction": conn.direction,
+                    "from_anchor": conn.from_anchor,
+                    "to_anchor": conn.to_anchor,
                 })
         self.clipboard = {
             "cards": cards_data,
@@ -2706,7 +2729,14 @@ class BoardApp:
             from_new = id_map.get(conn["from"])
             to_new = id_map.get(conn["to"])
             if from_new and to_new:
-                self.create_connection(from_new, to_new, label=conn.get("label", ""))
+                self.create_connection(
+                    from_new,
+                    to_new,
+                    label=conn.get("label", ""),
+                    direction=conn.get("direction", DEFAULT_CONNECTION_DIRECTION),
+                    from_anchor=conn.get("from_anchor"),
+                    to_anchor=conn.get("to_anchor"),
+                )
 
         self.select_card(None)
         for nid in id_map.values():

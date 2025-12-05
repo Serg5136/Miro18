@@ -3,6 +3,7 @@ from tkinter import simpledialog, colorchooser, messagebox
 import copy
 from typing import Dict, List
 from .autosave import AutoSaveService
+from .controllers import ConnectController, DragController, SelectionController
 from .board_model import Card as ModelCard, Connection as ModelConnection, Frame as ModelFrame, BoardData
 from .config import THEMES, load_theme_name, save_theme_name
 from .history import History
@@ -57,6 +58,11 @@ class BoardApp:
         # Режим соединения (кнопкой)
         self.connect_mode = False
         self.connect_from_card_id = None
+
+        # Контроллеры поведения
+        self.selection_controller = SelectionController(self)
+        self.connect_controller = ConnectController(self)
+        self.drag_controller = DragController(self)
 
         # Зум
         self.zoom_factor = 1.0
@@ -578,28 +584,10 @@ class BoardApp:
             )
 
     def update_connect_mode_indicator(self):
-        if not hasattr(self, "btn_connect_mode"):
-            return
-        if self.connect_mode:
-            active_bg = self.theme.get("frame_collapsed_bg", self.btn_connect_mode_default_bg)
-            self.btn_connect_mode.config(
-                relief="sunken",
-                bg=active_bg,
-                fg=self.theme.get("text", "black"),
-                text=f"{self.btn_connect_mode_default_text} ✓",
-            )
-        else:
-            self.btn_connect_mode.config(
-                relief="raised",
-                bg=self.btn_connect_mode_default_bg,
-                text=self.btn_connect_mode_default_text,
-            )
+        self.connect_controller.update_connect_mode_indicator()
 
     def set_connect_mode(self, enabled: bool):
-        self.connect_mode = enabled
-        if not enabled:
-            self.connect_from_card_id = None
-        self.update_connect_mode_indicator()
+        self.connect_controller.set_connect_mode(enabled)
 
     def snap_cards_to_grid(self, card_ids):
         if not self.snap_to_grid or not card_ids:
@@ -810,10 +798,7 @@ class BoardApp:
         return None
 
     def select_frame(self, frame_id):
-        self._clear_card_selection()
-        self.selected_frame_id = frame_id
-        self.render_selection()
-        self.update_controls_state()
+        self.selection_controller.select_frame(frame_id)
 
     def toggle_selected_frame_collapse(self):
         frame_id = self.selected_frame_id
@@ -958,309 +943,21 @@ class BoardApp:
     # ---------- Выделение карточек ----------
 
     def _clear_card_selection(self):
-        for cid in list(self.selected_cards):
-            if cid in self.cards:
-                self.hide_card_handles(cid)
-        self.selected_cards.clear()
-        self.selected_card_id = None
-        self.render_selection()
-        self.update_controls_state()
+        self.selection_controller.clear_card_selection()
 
     def select_card(self, card_id, additive=False):
-        if self.selected_frame_id is not None:
-            self.selected_frame_id = None
-
-        if not additive:
-            self._clear_card_selection()
-
-        if card_id is not None and card_id in self.cards:
-            self.selected_cards.add(card_id)
-            self.selected_card_id = card_id
-            self.show_card_handles(card_id)
-        else:
-            if not additive:
-                self.selected_card_id = None
-        self.render_selection()
-        self.update_controls_state()
+        self.selection_controller.select_card(card_id, additive)
 
     # ---------- Мышь: выбор/перетаскивание/resize/connect-drag ----------
 
     def on_canvas_click(self, event):
-        cx = self.canvas.canvasx(event.x)
-        cy = self.canvas.canvasy(event.y)
-        item = self.canvas.find_withtag("current")
-        item_id = item[0] if item else None
-        tags = self.canvas.gettags(item_id) if item_id else ()
-
-        # Сначала — хэндлы
-        if "resize_handle" in tags:
-            card_id = self.get_card_id_from_item(item)
-            if card_id is not None:
-                self.select_card(card_id, additive=False)
-                card = self.cards[card_id]
-                x1 = card.x - card.width / 2
-                y1 = card.y - card.height / 2
-                self.drag_data["dragging"] = True
-                self.drag_data["mode"] = "resize_card"
-                self.drag_data["resize_card_id"] = card_id
-                self.drag_data["resize_origin"] = (x1, y1)
-                self.drag_data["moved"] = False
-                self.drag_data["dragged_cards"] = {card_id}
-            return
-
-        if "connect_handle" in tags:
-            card_id = self.get_card_id_from_item(item)
-            if card_id is not None:
-                self.select_card(card_id, additive=False)
-                card = self.cards[card_id]
-                sx = card.x + card.width / 2
-                sy = card.y
-                self.drag_data["dragging"] = True
-                self.drag_data["mode"] = "connect_drag"
-                self.drag_data["connect_from_card"] = card_id
-                self.drag_data["connect_start"] = (sx, sy)
-                self.drag_data["temp_line_id"] = self.canvas.create_line(
-                    sx, sy, cx, cy,
-                    arrow=tk.LAST,
-                    width=2,
-                    fill=self.theme["connection"],
-                    dash=(2, 2),
-                    tags=("temp_connection",)
-                )
-                self.drag_data["moved"] = False
-            return
-
-        # Дальше — обычные режимы
-        card_id = self.get_card_id_from_item(item)
-        frame_id = None
-        if card_id is None:
-            frame_id = self.get_frame_id_from_item(item)
-
-        if self.connect_mode:
-            if card_id is not None:
-                if self.connect_from_card_id is None:
-                    self.connect_from_card_id = card_id
-                    self.select_card(card_id, additive=False)
-                else:
-                    if card_id != self.connect_from_card_id:
-                        self.create_connection(self.connect_from_card_id, card_id)
-                        self.push_history()
-                    self.set_connect_mode(False)
-                    self.select_card(card_id, additive=False)
-            return
-
-        # Сброс drag/lasso
-        self.drag_data["dragging"] = False
-        self.drag_data["dragged_cards"] = set()
-        self.drag_data["moved"] = False
-        self.drag_data["mode"] = None
-        self.drag_data["frame_id"] = None
-        self.drag_data["resize_card_id"] = None
-        self.drag_data["resize_origin"] = None
-        self.drag_data["connect_from_card"] = None
-        if self.drag_data["temp_line_id"]:
-            self.canvas.delete(self.drag_data["temp_line_id"])
-        self.drag_data["temp_line_id"] = None
-        self.selection_start = None
-        if self.selection_rect_id is not None:
-            self.canvas.delete(self.selection_rect_id)
-            self.selection_rect_id = None
-
-        if card_id is not None:
-            if card_id in self.selected_cards:
-                self.selected_card_id = card_id
-            else:
-                self.select_card(card_id, additive=False)
-
-            self.drag_data["dragging"] = True
-            self.drag_data["dragged_cards"] = set(self.selected_cards)
-            self.drag_data["last_x"] = cx
-            self.drag_data["last_y"] = cy
-            self.drag_data["mode"] = "cards"
-
-        elif frame_id is not None:
-            self.select_frame(frame_id)
-            self.drag_data["dragging"] = True
-            self.drag_data["mode"] = "frame"
-            self.drag_data["frame_id"] = frame_id
-            self.drag_data["last_x"] = cx
-            self.drag_data["last_y"] = cy
-            x1, y1, x2, y2 = self.canvas.coords(self.frames[frame_id].rect_id)
-            self.drag_data["dragged_cards"] = {
-                cid for cid, card in self.cards.items()
-                if x1 <= card.x <= x2 and y1 <= card.y <= y2
-            }
-        else:
-            self.select_card(None)
-            self.selection_start = (cx, cy)
-            self.selection_rect_id = self.canvas.create_rectangle(
-                cx, cy, cx, cy,
-                outline="#999999",
-                dash=(2, 2),
-                fill="",
-                tags=("selection_rect",)
-            )
+        return self.drag_controller.on_canvas_click(event)
 
     def on_mouse_drag(self, event):
-        cx = self.canvas.canvasx(event.x)
-        cy = self.canvas.canvasy(event.y)
-
-        if self.drag_data["dragging"]:
-            mode = self.drag_data["mode"]
-
-            if mode == "resize_card":
-                card_id = self.drag_data["resize_card_id"]
-                card = self.cards.get(card_id)
-                if not card:
-                    return
-                ox1, oy1 = self.drag_data["resize_origin"]
-                min_w, min_h = 60, 40
-                new_x2 = max(ox1 + min_w, cx)
-                new_y2 = max(oy1 + min_h, cy)
-                w = new_x2 - ox1
-                h = new_y2 - oy1
-                card.width = w
-                card.height = h
-                card.x = ox1 + w / 2
-                card.y = oy1 + h / 2
-                x1 = ox1
-                y1 = oy1
-                x2 = new_x2
-                y2 = new_y2
-                self.canvas.coords(card.rect_id, x1, y1, x2, y2)
-                self.canvas.coords(card.text_id, card.x, card.y)
-                self.update_card_handles_positions(card_id)
-                self.update_connections_for_card(card_id)
-                self.drag_data["moved"] = True
-                return
-
-            if mode == "connect_drag":
-                line_id = self.drag_data["temp_line_id"]
-                if line_id:
-                    sx, sy = self.drag_data["connect_start"]
-                    self.canvas.coords(line_id, sx, sy, cx, cy)
-                    self.drag_data["moved"] = True
-                return
-
-            dx = cx - self.drag_data["last_x"]
-            dy = cy - self.drag_data["last_y"]
-            if dx == 0 and dy == 0:
-                return
-            self.drag_data["last_x"] = cx
-            self.drag_data["last_y"] = cy
-            self.drag_data["moved"] = True
-
-            if mode == "cards":
-                for card_id in self.drag_data["dragged_cards"]:
-                    card = self.cards.get(card_id)
-                    if not card:
-                        continue
-                    card.x += dx
-                    card.y += dy
-                    x1 = card.x - card.width / 2
-                    y1 = card.y - card.height / 2
-                    x2 = card.x + card.width / 2
-                    y2 = card.y + card.height / 2
-                    self.canvas.coords(card.rect_id, x1, y1, x2, y2)
-                    self.canvas.coords(card.text_id, card.x, card.y)
-                    self.update_card_handles_positions(card_id)
-                    self.update_connections_for_card(card_id)
-
-            elif mode == "frame":
-                frame_id = self.drag_data["frame_id"]
-                frame = self.frames.get(frame_id)
-                if frame:
-                    self.canvas.move(frame.rect_id, dx, dy)
-                    self.canvas.move(frame.title_id, dx, dy)
-
-                for card_id in self.drag_data["dragged_cards"]:
-                    card = self.cards.get(card_id)
-                    if not card:
-                        continue
-                    card.x += dx
-                    card.y += dy
-                    x1 = card.x - card.width / 2
-                    y1 = card.y - card.height / 2
-                    x2 = card.x + card.width / 2
-                    y2 = card.y + card.height / 2
-                    self.canvas.coords(card.rect_id, x1, y1, x2, y2)
-                    self.canvas.coords(card.text_id, card.x, card.y)
-                    self.update_card_handles_positions(card_id)
-                    self.update_connections_for_card(card_id)
-
-        elif self.selection_start is not None and self.selection_rect_id is not None:
-            x0, y0 = self.selection_start
-            self.canvas.coords(self.selection_rect_id, x0, y0, cx, cy)
+        return self.drag_controller.on_mouse_drag(event)
 
     def on_mouse_release(self, event):
-        cx = self.canvas.canvasx(event.x)
-        cy = self.canvas.canvasy(event.y)
-        mode = self.drag_data["mode"]
-
-        # Завершение connect-drag
-        if mode == "connect_drag":
-            from_id = self.drag_data["connect_from_card"]
-            if self.drag_data["temp_line_id"]:
-                self.canvas.delete(self.drag_data["temp_line_id"])
-            target_id = None
-            items = self.canvas.find_overlapping(cx, cy, cx, cy)
-            for it in items:
-                cid = self.get_card_id_from_item((it,))
-                if cid is not None:
-                    target_id = cid
-                    break
-            if from_id is not None and target_id is not None and target_id != from_id:
-                self.create_connection(from_id, target_id)
-                self.push_history()
-
-            self.drag_data["dragging"] = False
-            self.drag_data["mode"] = None
-            self.drag_data["connect_from_card"] = None
-            self.drag_data["temp_line_id"] = None
-            self.drag_data["moved"] = False
-            return
-
-        # Завершение ресайза
-        if mode == "resize_card":
-            if self.drag_data["moved"]:
-                self.snap_cards_to_grid(self.drag_data["dragged_cards"])
-                self.push_history()
-            self.drag_data["dragging"] = False
-            self.drag_data["mode"] = None
-            self.drag_data["resize_card_id"] = None
-            self.drag_data["resize_origin"] = None
-            self.drag_data["dragged_cards"] = set()
-            self.drag_data["moved"] = False
-            return
-
-        # Завершение перемещения
-        if self.drag_data["dragging"] and self.drag_data["moved"]:
-            self.snap_cards_to_grid(self.drag_data["dragged_cards"])
-            self.push_history()
-
-        self.drag_data["dragging"] = False
-        self.drag_data["dragged_cards"] = set()
-        self.drag_data["moved"] = False
-        self.drag_data["mode"] = None
-
-        # Завершение прямоугольного выделения
-        if self.selection_start is not None and self.selection_rect_id is not None:
-            x1, y1, x2, y2 = self.canvas.coords(self.selection_rect_id)
-            left = min(x1, x2)
-            right = max(x1, x2)
-            top = min(y1, y2)
-            bottom = max(y1, y2)
-
-            self.select_card(None)
-            for card_id, card in self.cards.items():
-                if left <= card.x <= right and top <= card.y <= bottom:
-                    self.select_card(card_id, additive=True)
-
-            self.canvas.delete(self.selection_rect_id)
-            self.selection_rect_id = None
-            self.selection_start = None
-
-    # ---------- Панорамирование ----------
+        return self.drag_controller.on_mouse_release(event)
 
     def start_pan(self, event):
         self.canvas.scan_mark(event.x, event.y)
@@ -1354,14 +1051,7 @@ class BoardApp:
         self.canvas_view.update_connection_positions(self.connections, self.cards, card_id)
 
     def toggle_connect_mode(self):
-        if not self.connect_mode:
-            self.set_connect_mode(True)
-            messagebox.showinfo(
-                "Режим соединения",
-                "Кликните по первой карточке, затем по второй, чтобы соединить их."
-            )
-        else:
-            self.set_connect_mode(False)
+        self.connect_controller.toggle_connect_mode()
 
     # ---------- Цвет и текст карточки ----------
 
@@ -1636,7 +1326,7 @@ class BoardApp:
 
     # ---------- Удаление карточек ----------
 
-    def delete_selected_cards(self):
+    def delete_selected_cards(self, event=None):
         if not self.selected_cards:
             return
         to_delete = list(self.selected_cards)

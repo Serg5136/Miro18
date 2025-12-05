@@ -250,6 +250,7 @@ class CanvasView:
                 my2,
                 outline=self.theme["minimap_card_outline"],
                 fill="",
+                tags=("minimap_card",),
             )
 
         for frame in frames:
@@ -266,6 +267,7 @@ class CanvasView:
                 my2,
                 outline=self.theme["minimap_frame_outline"],
                 dash=(2, 2),
+                tags=("minimap_frame",),
             )
 
         vx0, vx1 = self.canvas.xview()
@@ -282,4 +284,5 @@ class CanvasView:
             mvx2,
             mvy2,
             outline=self.theme["minimap_viewport"],
+            tags=("minimap_viewport",),
         )

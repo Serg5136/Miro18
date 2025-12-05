@@ -10,16 +10,30 @@ class CanvasView:
         self.text_padding_max = 16
         self.text_margin_min = 2
         self.text_margin_max = 6
+        self.base_font_size = 10
         self.canvas = canvas
         self.minimap = minimap
         self.theme = theme
 
-    def _compute_spacing(self, card: Card) -> tuple[float, float]:
+    def _responsive_scale(self, card: Card) -> float:
+        """Return scale factor for compact layouts (akin to a mobile breakpoint)."""
+
+        canvas_width = self.canvas.winfo_width() or self.canvas.winfo_reqwidth()
+        if canvas_width and canvas_width <= 480:
+            return 0.85
+        if card.width <= 240:
+            return 0.9
+        return 1.0
+
+    def _compute_spacing(self, card: Card, scale: float) -> tuple[float, float]:
         """Return adaptive (padding, margin) for the given card."""
 
-        padding = max(self.text_padding_min, min(card.width * 0.05, self.text_padding_max))
+        padding = max(
+            self.text_padding_min * scale,
+            min(card.width * 0.05, self.text_padding_max * scale),
+        )
         margin_base = padding * 0.4
-        margin = max(self.text_margin_min, min(margin_base, self.text_margin_max))
+        margin = max(self.text_margin_min * scale, min(margin_base, self.text_margin_max * scale))
         return padding, margin
 
     def set_theme(self, theme: Dict[str, str]) -> None:
@@ -31,8 +45,11 @@ class CanvasView:
     def compute_card_layout(self, card: Card) -> Dict[str, float]:
         """Calculate positions for text and image areas inside the card."""
 
-        padding, margin = self._compute_spacing(card)
+        scale = self._responsive_scale(card)
+        padding, margin = self._compute_spacing(card, scale)
         y1 = card.y - card.height / 2
+        font_size = max(8, int(self.base_font_size * scale))
+        font = ("Arial", font_size, "bold")
         text_width = max(card.width - 2 * padding, 20)
 
         measure_id = self.canvas.create_text(
@@ -41,16 +58,18 @@ class CanvasView:
             text=card.text or " ",
             width=text_width,
             anchor="nw",
-            font=("Arial", 10, "bold"),
+            font=font,
             state="hidden",
         )
         bbox = self.canvas.bbox(measure_id)
         self.canvas.delete(measure_id)
-        text_height = (bbox[3] - bbox[1]) if bbox else 14
+        text_height = (bbox[3] - bbox[1]) if bbox else max(font_size + 4, 14)
 
         text_top = y1 + padding
         image_top = text_top + text_height + padding
         image_height = max(card.height - (image_top - y1) - padding, 0)
+        if scale < 1.0:
+            image_height = min(image_height, card.height * 0.6)
         image_width = max(card.width - 2 * padding, 0)
 
         return {
@@ -61,14 +80,21 @@ class CanvasView:
             "image_width": image_width,
             "padding": padding,
             "margin": margin,
+            "font": font,
         }
 
     def apply_card_layout(self, card: Card, layout: Dict[str, float]) -> None:
         text_width = layout["text_width"]
         text_top = layout["text_top"]
+        font = layout.get("font")
 
         if card.text_id:
-            self.canvas.itemconfig(card.text_id, width=text_width, anchor="n")
+            self.canvas.itemconfig(
+                card.text_id,
+                width=text_width,
+                anchor="n",
+                font=font or ("Arial", self.base_font_size, "bold"),
+            )
             self.canvas.coords(card.text_id, card.x, text_top)
 
         if card.text_bg_id:
@@ -126,13 +152,14 @@ class CanvasView:
             tags=("card", f"card_{card.id}"),
         )
         layout = self.compute_card_layout(card)
+        font = layout.get("font", ("Arial", self.base_font_size, "bold"))
         text_id = self.canvas.create_text(
             card.x,
             layout["text_top"],
             text=card.text,
             width=layout["text_width"],
             anchor="n",
-            font=("Arial", 10, "bold"),
+            font=font,
             fill=self.theme["text"],
             tags=("card_text", f"card_{card.id}"),
         )

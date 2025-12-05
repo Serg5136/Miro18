@@ -6,11 +6,35 @@ from ..board_model import Card, Connection, Frame
 
 class CanvasView:
     def __init__(self, canvas: tk.Canvas, minimap: tk.Canvas | None, theme: Dict[str, str]):
-        self.text_padding = 10
-        self.text_margin = 4
+        self.text_padding_min = 8
+        self.text_padding_max = 16
+        self.text_margin_min = 2
+        self.text_margin_max = 6
+        self.base_font_size = 10
         self.canvas = canvas
         self.minimap = minimap
         self.theme = theme
+
+    def _responsive_scale(self, card: Card) -> float:
+        """Return scale factor for compact layouts (akin to a mobile breakpoint)."""
+
+        canvas_width = self.canvas.winfo_width() or self.canvas.winfo_reqwidth()
+        if canvas_width and canvas_width <= 480:
+            return 0.85
+        if card.width <= 240:
+            return 0.9
+        return 1.0
+
+    def _compute_spacing(self, card: Card, scale: float) -> tuple[float, float]:
+        """Return adaptive (padding, margin) for the given card."""
+
+        padding = max(
+            self.text_padding_min * scale,
+            min(card.width * 0.05, self.text_padding_max * scale),
+        )
+        margin_base = padding * 0.4
+        margin = max(self.text_margin_min * scale, min(margin_base, self.text_margin_max * scale))
+        return padding, margin
 
     def set_theme(self, theme: Dict[str, str]) -> None:
         self.theme = theme
@@ -21,8 +45,11 @@ class CanvasView:
     def compute_card_layout(self, card: Card) -> Dict[str, float]:
         """Calculate positions for text and image areas inside the card."""
 
-        padding = self.text_padding
+        scale = self._responsive_scale(card)
+        padding, margin = self._compute_spacing(card, scale)
         y1 = card.y - card.height / 2
+        font_size = max(8, int(self.base_font_size * scale))
+        font = ("Arial", font_size, "bold")
         text_width = max(card.width - 2 * padding, 20)
 
         measure_id = self.canvas.create_text(
@@ -31,16 +58,18 @@ class CanvasView:
             text=card.text or " ",
             width=text_width,
             anchor="nw",
-            font=("Arial", 10, "bold"),
+            font=font,
             state="hidden",
         )
         bbox = self.canvas.bbox(measure_id)
         self.canvas.delete(measure_id)
-        text_height = (bbox[3] - bbox[1]) if bbox else 14
+        text_height = (bbox[3] - bbox[1]) if bbox else max(font_size + 4, 14)
 
         text_top = y1 + padding
         image_top = text_top + text_height + padding
         image_height = max(card.height - (image_top - y1) - padding, 0)
+        if scale < 1.0:
+            image_height = min(image_height, card.height * 0.6)
         image_width = max(card.width - 2 * padding, 0)
 
         return {
@@ -49,33 +78,44 @@ class CanvasView:
             "image_top": image_top,
             "image_height": image_height,
             "image_width": image_width,
+            "padding": padding,
+            "margin": margin,
+            "font": font,
         }
 
     def apply_card_layout(self, card: Card, layout: Dict[str, float]) -> None:
         text_width = layout["text_width"]
         text_top = layout["text_top"]
+        font = layout.get("font")
 
         if card.text_id:
-            self.canvas.itemconfig(card.text_id, width=text_width, anchor="n")
+            self.canvas.itemconfig(
+                card.text_id,
+                width=text_width,
+                anchor="n",
+                font=font or ("Arial", self.base_font_size, "bold"),
+            )
             self.canvas.coords(card.text_id, card.x, text_top)
 
         if card.text_bg_id:
             bbox = self.canvas.bbox(card.text_id) if card.text_id else None
             if bbox:
+                margin = layout.get("margin", self.text_margin_min)
                 self.canvas.coords(
                     card.text_bg_id,
-                    bbox[0] - self.text_margin,
-                    bbox[1] - self.text_margin,
-                    bbox[2] + self.text_margin,
-                    bbox[3] + self.text_margin,
+                    bbox[0] - margin,
+                    bbox[1] - margin,
+                    bbox[2] + margin,
+                    bbox[3] + margin,
                 )
                 self.canvas.tag_lower(card.text_bg_id, card.text_id)
 
-    def draw_grid(self, grid_size: int) -> None:
+    def draw_grid(self, grid_size: int, visible: bool = True) -> None:
         self.canvas.delete("grid")
         spacing = grid_size
         x_max = 4000
         y_max = 4000
+        state = "normal" if visible else "hidden"
         for x in range(0, x_max + 1, spacing):
             self.canvas.create_line(
                 x,
@@ -84,6 +124,7 @@ class CanvasView:
                 y_max,
                 fill=self.theme["grid"],
                 tags=("grid",),
+                state=state,
             )
         for y in range(0, y_max + 1, spacing):
             self.canvas.create_line(
@@ -93,8 +134,15 @@ class CanvasView:
                 y,
                 fill=self.theme["grid"],
                 tags=("grid",),
+                state=state,
             )
         self.canvas.tag_lower("grid")
+
+    def set_grid_visibility(self, visible: bool) -> None:
+        state = "normal" if visible else "hidden"
+        self.canvas.itemconfigure("grid", state=state)
+        if visible:
+            self.canvas.tag_lower("grid")
 
     def draw_card(self, card: Card) -> None:
         x1 = card.x - card.width / 2
@@ -113,13 +161,14 @@ class CanvasView:
             tags=("card", f"card_{card.id}"),
         )
         layout = self.compute_card_layout(card)
+        font = layout.get("font", ("Arial", self.base_font_size, "bold"))
         text_id = self.canvas.create_text(
             card.x,
             layout["text_top"],
             text=card.text,
             width=layout["text_width"],
             anchor="n",
-            font=("Arial", 10, "bold"),
+            font=font,
             fill=self.theme["text"],
             tags=("card_text", f"card_{card.id}"),
         )
@@ -129,11 +178,12 @@ class CanvasView:
             card.x,
             layout["text_top"] + 14,
         )
+        margin = layout.get("margin", self.text_margin_min)
         text_bg_id = self.canvas.create_rectangle(
-            text_bbox[0] - self.text_margin,
-            text_bbox[1] - self.text_margin,
-            text_bbox[2] + self.text_margin,
-            text_bbox[3] + self.text_margin,
+            text_bbox[0] - margin,
+            text_bbox[1] - margin,
+            text_bbox[2] + margin,
+            text_bbox[3] + margin,
             fill=card.color,
             outline="",
             tags=("card_text_bg", f"card_{card.id}"),
@@ -287,9 +337,10 @@ class CanvasView:
         frames: Dict[int, Frame],
         connections: Iterable[Connection],
         grid_size: int,
+        show_grid: bool,
     ) -> None:
         self.canvas.delete("all")
-        self.draw_grid(grid_size)
+        self.draw_grid(grid_size, visible=show_grid)
 
         for frame in frames.values():
             self.draw_frame(frame)
@@ -314,6 +365,8 @@ class CanvasView:
         frames: Dict[int, Frame],
         selected_cards: Iterable[int],
         selected_frame_id: int | None,
+        connections: Iterable[Connection] | None = None,
+        selected_connection: Connection | None = None,
     ) -> None:
         selected_cards_set = set(selected_cards)
         for cid, card in cards.items():
@@ -324,6 +377,19 @@ class CanvasView:
             if frame.rect_id:
                 width = 3 if fid == selected_frame_id else 2
                 self.canvas.itemconfig(frame.rect_id, width=width)
+
+        if connections is None:
+            return
+
+        for conn in connections:
+            if conn.line_id:
+                width = 3 if conn is selected_connection else 2
+                self.canvas.itemconfig(conn.line_id, width=width, fill=self.theme["connection"])
+            if conn.label_id:
+                label_color = self.theme["connection_label"]
+                if conn is selected_connection:
+                    label_color = self.theme.get("connection_label_selected", label_color)
+                self.canvas.itemconfig(conn.label_id, fill=label_color)
 
     def render_minimap(self, cards: Iterable[Card], frames: Iterable[Frame]) -> None:
         if not self.minimap:

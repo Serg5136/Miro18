@@ -31,7 +31,7 @@ class BoardApp:
         self.root.geometry("1200x800")
 
         # Темы
-        self.theme_name, self.text_colors = load_theme_settings(THEMES)
+        self.theme_name, self.text_colors, self.show_grid = load_theme_settings(THEMES)
         self.theme = self._build_theme()
 
         # Данные борда
@@ -49,6 +49,7 @@ class BoardApp:
         # Выделение карточек
         self.selected_card_id = None
         self.selected_cards = set()
+        self.selected_connection: ModelConnection | None = None
 
         # Прямоугольник выделения (lasso)
         self.selection_rect_id = None
@@ -95,9 +96,12 @@ class BoardApp:
         # Сетка
         self.grid_size = 20
         self.snap_to_grid = True
+        self.var_show_grid = tk.BooleanVar(value=self.show_grid)
         # Привязка к сетке — переменные для UI
         self.var_snap_to_grid = tk.BooleanVar(value=self.snap_to_grid)
         self.var_grid_size = tk.IntVar(value=self.grid_size)
+        self.var_card_width = tk.IntVar(value=180)
+        self.var_card_height = tk.IntVar(value=100)
 
         # История (Undo/Redo) и автосохранение
         self.history = History()
@@ -115,6 +119,9 @@ class BoardApp:
         self.selected_attachment: tuple[int, int] | None = None
         self.attachment_selection_box_id: int | None = None
         self.attachment_resize_handles: Dict[str, int | None] = {}
+        self.attachment_fit_mode: str = "contain"
+        self.attachment_min_aspect_ratio = 0.5
+        self.attachment_max_aspect_ratio = 2.0
 
         # Inline-редактор текста карточек
         self.inline_editor = None
@@ -284,6 +291,7 @@ class BoardApp:
             conn = self.get_connection_from_item(item_id)
             if conn is not None:
                 self.context_connection = conn
+                self.select_connection(conn)
                 self.connection_menu.tk_popup(event.x_root, event.y_root)
                 return
     
@@ -437,14 +445,23 @@ class BoardApp:
         conn = self.context_connection
         if not conn:
             return
-        self.canvas.delete(conn.line_id)
-        if conn.label_id:
-            self.canvas.delete(conn.label_id)
+        self._delete_connection(conn)
+        self.push_history()
+
+    def _delete_connection(self, connection: ModelConnection) -> None:
+        self.canvas.delete(connection.line_id)
+        if connection.label_id:
+            self.canvas.delete(connection.label_id)
         try:
-            self.connections.remove(conn)
+            self.connections.remove(connection)
         except ValueError:
             pass
-        self.push_history()
+        if connection is self.selected_connection:
+            self.selected_connection = None
+        if connection is self.context_connection:
+            self.context_connection = None
+        self.render_selection()
+        self.update_controls_state()
     
     def _context_add_card_here(self):
         text_value = simpledialog.askstring(
@@ -494,6 +511,7 @@ class BoardApp:
             self.selected_card_id = None
             self.selected_cards.clear()
             self.selected_frame_id = None
+            self.selected_connection = None
             self.set_connect_mode(False)
             self.zoom_factor = 1.0
             self.canvas.config(scrollregion=(0, 0, 4000, 4000),
@@ -569,6 +587,7 @@ class BoardApp:
         self.selected_card_id = None
         self.selected_cards.clear()
         self.selected_frame_id = None
+        self.selected_connection = None
         self.set_connect_mode(False)
         self.zoom_factor = 1.0
         self.canvas.config(scrollregion=(0, 0, 4000, 4000), bg=self.theme["bg"])
@@ -630,17 +649,44 @@ class BoardApp:
     # ---------- Сетка ----------
 
     def draw_grid(self):
-        self.canvas_view.draw_grid(self.grid_size)
+        self.canvas_view.draw_grid(self.grid_size, visible=self.show_grid)
 
     def render_board(self):
-        self.canvas_view.render_board(self.cards, self.frames, self.connections, self.grid_size)
+        self.canvas_view.render_board(
+            self.cards, self.frames, self.connections, self.grid_size, self.show_grid
+        )
         self._clear_all_attachment_previews()
         self.render_all_attachments()
 
     def render_selection(self):
         self.canvas_view.render_selection(
-            self.cards, self.frames, self.selected_cards, self.selected_frame_id
+            self.cards,
+            self.frames,
+            self.selected_cards,
+            self.selected_frame_id,
+            self.connections,
+            self.selected_connection,
         )
+
+    def clear_connection_selection(self) -> None:
+        if self.selected_connection is None:
+            return
+        self.selected_connection = None
+        self.context_connection = None
+        self.render_selection()
+        self.update_controls_state()
+
+    def select_connection(self, connection: ModelConnection | None) -> None:
+        if connection is None:
+            self.clear_connection_selection()
+            return
+
+        self.selection_controller.select_frame(None)
+        self.selection_controller.select_card(None, additive=False)
+        self.selected_connection = connection
+        self.context_connection = connection
+        self.render_selection()
+        self.update_controls_state()
 
     def clear_attachment_selection(self) -> None:
         if self.attachment_selection_box_id:
@@ -673,6 +719,25 @@ class BoardApp:
             self.btn_redo_toolbar.config(
                 state="normal" if self.history and self.history.can_redo() else "disabled"
             )
+
+        self._sync_size_controls_with_selection()
+
+    def _sync_size_controls_with_selection(self) -> None:
+        if not hasattr(self, "var_card_width") or not hasattr(self, "var_card_height"):
+            return
+        card_id = self.selected_card_id if self.selected_card_id in self.cards else next(
+            (cid for cid in self.selected_cards if cid in self.cards),
+            None,
+        )
+        if card_id is None:
+            return
+
+        card = self.cards.get(card_id)
+        if not card:
+            return
+
+        self.var_card_width.set(int(card.width))
+        self.var_card_height.set(int(card.height))
 
     def update_connect_mode_indicator(self):
         self.connect_controller.update_connect_mode_indicator()
@@ -1039,7 +1104,7 @@ class BoardApp:
             copy_image.thumbnail(max_size)
         return copy_image.convert("RGBA")
 
-    def _resize_image(self, image, size: tuple[int, int]):
+    def _resize_image(self, image, size: tuple[int, int], *, fit_mode: str = "contain"):
         try:
             from PIL import Image, ImageOps
         except ImportError:
@@ -1069,6 +1134,16 @@ class BoardApp:
             return 0, 0
         final_width = max(1, int(target_width * scale_limit))
         final_height = max(1, int(target_height * scale_limit))
+        aspect = final_width / final_height if final_height else 0
+        if self.attachment_max_aspect_ratio and aspect > self.attachment_max_aspect_ratio:
+            final_width = int(final_height * self.attachment_max_aspect_ratio)
+        elif self.attachment_min_aspect_ratio and aspect < self.attachment_min_aspect_ratio:
+            final_height = int(final_width / self.attachment_min_aspect_ratio)
+
+        final_width = min(final_width, max_width)
+        final_height = min(final_height, max_height)
+        if final_width <= 0 or final_height <= 0:
+            return 0, 0
         return final_width, final_height
 
     def _clamp_attachment_offset(
@@ -1115,7 +1190,8 @@ class BoardApp:
         layout: dict[str, float] | None = None,
     ) -> tuple[float, float]:
         layout = layout or self.canvas_view.compute_card_layout(card)
-        padding = 6
+        gutter = layout.get("padding", 10) * 0.6
+        padding = max(4.0, min(gutter, 12.0))
         per_row = max(int((layout["image_width"] - padding) // (thumb_size[0] + padding)), 1)
         col = idx % per_row
         row = idx // per_row
@@ -1129,7 +1205,7 @@ class BoardApp:
         if not card.attachments:
             return 0.0, 0.0
 
-        padding = self.canvas_view.text_padding
+        padding = layout.get("padding", self.canvas_view.text_padding_min)
         required_width = 0.0
         required_image_height = 0.0
         for attachment in card.attachments:
@@ -1366,7 +1442,8 @@ class BoardApp:
                 continue
 
             self._clamp_attachment_offset(attachment, (final_width, final_height), layout)
-            preview = self._resize_image(image, (final_width, final_height))
+            fit_mode = self.attachment_fit_mode if self.attachment_fit_mode in {"contain", "cover"} else "contain"
+            preview = self._resize_image(image, (final_width, final_height), fit_mode=fit_mode)
             if preview is None:
                 continue
             photo = ImageTk.PhotoImage(preview)
@@ -1729,6 +1806,7 @@ class BoardApp:
         # Двойной клик по связи — редактируем подпись
         conn = self.get_connection_from_item(item_id)
         if conn is not None:
+            self.select_connection(conn)
             current_label = conn.label
             new_label = simpledialog.askstring(
                 "Подпись связи",
@@ -2348,7 +2426,7 @@ class BoardApp:
         self.text_colors[self.theme_name] = color
         self._apply_theme()
         self._redraw_with_current_theme()
-        save_theme_settings(self.theme_name, self.text_colors)
+        save_theme_settings(self.theme_name, self.text_colors, self.show_grid)
 
     def edit_card_text_dialog(self):
         if self.selected_card_id is None or self.selected_card_id not in self.cards:
@@ -2484,6 +2562,13 @@ class BoardApp:
         conn.toggle_direction()
         self.canvas_view.apply_connection_direction(conn)
         self.push_history()
+
+    def toggle_selected_connection_direction(self, event=None):
+        if not self.selected_connection:
+            return
+        self.selected_connection.toggle_direction()
+        self.canvas_view.apply_connection_direction(self.selected_connection)
+        self.push_history()
     
     def _require_multiple_selected_cards(self):
         cards = [cid for cid in self.selected_cards if cid in self.cards]
@@ -2586,9 +2671,73 @@ class BoardApp:
             self.update_connections_for_card(cid)
 
         self.push_history()
+
+    def apply_card_size_from_controls(self):
+        try:
+            target_width = int(self.var_card_width.get())
+            target_height = int(self.var_card_height.get())
+        except (tk.TclError, ValueError):
+            messagebox.showwarning(
+                "Некорректный размер",
+                "Введите целые числа для ширины и высоты карточки.",
+            )
+            return
+
+        if target_width <= 0 or target_height <= 0:
+            messagebox.showwarning(
+                "Некорректный размер",
+                "Ширина и высота должны быть положительными числами.",
+            )
+            return
+
+        card_ids = [cid for cid in self.selected_cards if cid in self.cards]
+        if not card_ids:
+            messagebox.showinfo("Нет выбора", "Сначала выберите карточку для изменения размера.")
+            return
+
+        changed = False
+        for cid in card_ids:
+            card = self.cards.get(cid)
+            if not card:
+                continue
+
+            original_w, original_h = card.width, card.height
+            card.width = target_width
+            card.height = target_height
+            layout = self.canvas_view.compute_card_layout(card)
+            attach_min_w, attach_min_h = self._compute_attachments_min_size(card, layout)
+            min_w = max(60, attach_min_w)
+            min_h = max(40, attach_min_h)
+            new_w = max(target_width, min_w)
+            new_h = max(target_height, min_h)
+            card.width = new_w
+            card.height = new_h
+
+            x1 = card.x - new_w / 2
+            y1 = card.y - new_h / 2
+            x2 = card.x + new_w / 2
+            y2 = card.y + new_h / 2
+            self.canvas.coords(card.rect_id, x1, y1, x2, y2)
+            width_scale = new_w / original_w if original_w else 1.0
+            height_scale = new_h / original_h if original_h else 1.0
+            self.update_card_layout(cid, attachment_scale=(width_scale, height_scale))
+            self.update_card_handles_positions(cid)
+            self.update_connections_for_card(cid)
+            changed = True
+
+        if changed:
+            self.update_minimap()
+            self.push_history()
+        self.update_controls_state()
     
     # ---------- Настройки сетки (UI-обработчики) ----------
     
+    def on_toggle_show_grid(self):
+        """Отобразить или скрыть сетку и сохранить выбор пользователя."""
+        self.show_grid = bool(self.var_show_grid.get())
+        self.canvas_view.set_grid_visibility(self.show_grid)
+        save_theme_settings(self.theme_name, self.text_colors, self.show_grid)
+
     def on_toggle_snap_to_grid(self):
         """
         Включаем / выключаем привязку к сетке.
@@ -2617,19 +2766,22 @@ class BoardApp:
     # ---------- Удаление карточек ----------
 
     def delete_selected_cards(self, event=None):
+        deleted_anything = False
+        if self.selected_connection:
+            self._delete_connection(self.selected_connection)
+            self.selected_connection = None
+            deleted_anything = True
+
         if not self.selected_cards:
+            if deleted_anything:
+                self.push_history()
             return
         to_delete = list(self.selected_cards)
 
-        new_connections = []
-        for conn in self.connections:
+        for conn in list(self.connections):
             if conn.from_id in to_delete or conn.to_id in to_delete:
-                self.canvas.delete(conn.line_id)
-                if conn.label_id:
-                    self.canvas.delete(conn.label_id)
-            else:
-                new_connections.append(conn)
-        self.connections = new_connections
+                self._delete_connection(conn)
+                deleted_anything = True
 
         for card_id in to_delete:
             card = self.cards.get(card_id)
@@ -2833,7 +2985,7 @@ class BoardApp:
         self.theme_name = "dark" if self.theme_name == "light" else "light"
         self._apply_theme()
         self._redraw_with_current_theme()
-        save_theme_settings(self.theme_name, self.text_colors)
+        save_theme_settings(self.theme_name, self.text_colors, self.show_grid)
 
     # ---------- Закрытие ----------
 

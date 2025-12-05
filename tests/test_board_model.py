@@ -1,4 +1,16 @@
-from src.board_model import Attachment, BoardData, Card, Connection, Frame, SCHEMA_VERSION
+import copy
+
+from src.board_model import (
+    Attachment,
+    BoardData,
+    Card,
+    Connection,
+    Frame,
+    SCHEMA_VERSION,
+    bulk_update_card_colors,
+)
+from src.config import THEMES
+from src.history import History
 
 
 def test_card_serialization_roundtrip():
@@ -153,3 +165,66 @@ def test_attachment_preview_scale_defaults_for_legacy_data():
     restored = Attachment.from_primitive(legacy_attachment)
 
     assert restored.preview_scale == 1.0
+
+
+def test_bulk_color_update_for_multiple_cards():
+    cards = {
+        1: Card(id=1, x=0, y=0, width=50, height=50, color="#123456"),
+        2: Card(id=2, x=10, y=10, width=50, height=50, color="#abcdef"),
+        3: Card(id=3, x=20, y=20, width=50, height=50, color="#123456"),
+    }
+
+    changed = bulk_update_card_colors(cards, [1, 3], "#ffffff")
+
+    assert set(changed) == {1, 3}
+    assert cards[1].color == "#ffffff"
+    assert cards[3].color == "#ffffff"
+    assert cards[2].color == "#abcdef"
+
+
+def test_bulk_color_update_integrates_with_history_undo_redo():
+    initial_cards = {
+        1: Card(id=1, x=0, y=0, width=50, height=50),
+        2: Card(id=2, x=1, y=1, width=50, height=50),
+    }
+
+    history = History()
+    initial_board = BoardData(
+        cards=copy.deepcopy(initial_cards), connections=[], frames={}
+    )
+    history.clear_and_init(initial_board.to_primitive())
+
+    working_cards = copy.deepcopy(initial_cards)
+    bulk_update_card_colors(working_cards, working_cards.keys(), "#ff00ff")
+    updated_board = BoardData(cards=working_cards, connections=[], frames={})
+    history.push(updated_board.to_primitive())
+
+    class DummyBoardApp:
+        def __init__(self):
+            self.board: BoardData | None = None
+
+        def set_board_from_data(self, data):
+            self.board = BoardData.from_primitive(data)
+
+    app = DummyBoardApp()
+
+    undo_state = history.undo(app)
+    assert undo_state["cards"][0]["color"] == "#fff9b1"
+    assert app.board and app.board.cards[1].color == "#fff9b1"
+
+    redo_state = history.redo(app)
+    assert redo_state["cards"][0]["color"] == "#ff00ff"
+    assert app.board and app.board.cards[2].color == "#ff00ff"
+
+
+def test_bulk_color_update_preserves_theme_defaults():
+    default_light = THEMES["light"]["card_default"]
+    cards = {1: Card(id=1, x=0, y=0, width=30, height=30, color=default_light)}
+
+    bulk_update_card_colors(cards, [1, 999], "#101010")
+
+    serialized = BoardData(cards=cards, connections=[], frames={}).to_primitive()
+    restored = BoardData.from_primitive(serialized)
+
+    assert restored.cards[1].color == "#101010"
+    assert THEMES["light"]["card_default"] == default_light

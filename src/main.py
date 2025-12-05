@@ -8,7 +8,14 @@ from pathlib import Path
 from typing import Dict, List
 from .autosave import AutoSaveService
 from .controllers import ConnectController, DragController, SelectionController
-from .board_model import Card as ModelCard, Connection as ModelConnection, Frame as ModelFrame, BoardData, Attachment
+from .board_model import (
+    Attachment,
+    BoardData,
+    Card as ModelCard,
+    Connection as ModelConnection,
+    Frame as ModelFrame,
+    bulk_update_card_colors,
+)
 from .config import THEMES, load_theme_settings, save_theme_settings
 from .history import History
 from .io import files as file_io
@@ -332,8 +339,8 @@ class BoardApp:
     def _context_change_card_color(self):
         if self.context_card_id is None:
             return
-        self.selected_card_id = self.context_card_id
-        self.selected_cards = {self.context_card_id}
+        if self.context_card_id not in self.selected_cards:
+            self.select_card(self.context_card_id, additive=False)
         self.change_color()
     
     def _context_delete_cards(self):
@@ -2298,18 +2305,26 @@ class BoardApp:
     # ---------- Цвет и текст карточки ----------
 
     def change_color(self):
-        if self.selected_card_id is None or self.selected_card_id not in self.cards:
+        card_ids = [cid for cid in self.selected_cards if cid in self.cards]
+        if not card_ids:
             messagebox.showwarning("Нет выбора", "Сначала выберите карточку.")
             return
-        card = self.cards[self.selected_card_id]
-        initial = card.color
+
+        initial_card_id = self.selected_card_id if self.selected_card_id in self.cards else card_ids[0]
+        initial = self.cards[initial_card_id].color
         color = colorchooser.askcolor(initialcolor=initial, parent=self.root)[1]
         if not color:
             return
-        card.color = color
-        self.canvas.itemconfig(card.rect_id, fill=color)
-        if card.text_bg_id:
-            self.canvas.itemconfig(card.text_bg_id, fill=color)
+
+        changed = bulk_update_card_colors(self.cards, card_ids, color)
+        if not changed:
+            return
+
+        for cid in changed:
+            card = self.cards[cid]
+            self.canvas_view.update_card_color(card)
+            self.update_card_layout(cid, redraw_attachment=False)
+        self.render_selection()
         self.push_history()
 
     def change_text_color(self):

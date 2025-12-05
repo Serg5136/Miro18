@@ -6,6 +6,8 @@ from ..board_model import Card, Connection, Frame
 
 class CanvasView:
     def __init__(self, canvas: tk.Canvas, minimap: tk.Canvas | None, theme: Dict[str, str]):
+        self.text_padding = 10
+        self.text_margin = 4
         self.canvas = canvas
         self.minimap = minimap
         self.theme = theme
@@ -15,6 +17,59 @@ class CanvasView:
         self.canvas.config(bg=self.theme["bg"])
         if self.minimap:
             self.minimap.config(bg=self.theme["minimap_bg"])
+
+    def compute_card_layout(self, card: Card) -> Dict[str, float]:
+        """Calculate positions for text and image areas inside the card."""
+
+        padding = self.text_padding
+        y1 = card.y - card.height / 2
+        text_width = max(card.width - 2 * padding, 20)
+
+        measure_id = self.canvas.create_text(
+            0,
+            0,
+            text=card.text or " ",
+            width=text_width,
+            anchor="nw",
+            font=("Arial", 10, "bold"),
+            state="hidden",
+        )
+        bbox = self.canvas.bbox(measure_id)
+        self.canvas.delete(measure_id)
+        text_height = (bbox[3] - bbox[1]) if bbox else 14
+
+        text_top = y1 + padding
+        image_top = text_top + text_height + padding
+        image_height = max(card.height - (image_top - y1) - padding, 0)
+        image_width = max(card.width - 2 * padding, 0)
+
+        return {
+            "text_top": text_top,
+            "text_width": text_width,
+            "image_top": image_top,
+            "image_height": image_height,
+            "image_width": image_width,
+        }
+
+    def apply_card_layout(self, card: Card, layout: Dict[str, float]) -> None:
+        text_width = layout["text_width"]
+        text_top = layout["text_top"]
+
+        if card.text_id:
+            self.canvas.itemconfig(card.text_id, width=text_width, anchor="n")
+            self.canvas.coords(card.text_id, card.x, text_top)
+
+        if card.text_bg_id:
+            bbox = self.canvas.bbox(card.text_id) if card.text_id else None
+            if bbox:
+                self.canvas.coords(
+                    card.text_bg_id,
+                    bbox[0] - self.text_margin,
+                    bbox[1] - self.text_margin,
+                    bbox[2] + self.text_margin,
+                    bbox[3] + self.text_margin,
+                )
+                self.canvas.tag_lower(card.text_bg_id, card.text_id)
 
     def draw_grid(self, grid_size: int) -> None:
         self.canvas.delete("grid")
@@ -57,18 +112,37 @@ class CanvasView:
             width=1.5,
             tags=("card", f"card_{card.id}"),
         )
+        layout = self.compute_card_layout(card)
         text_id = self.canvas.create_text(
             card.x,
-            card.y,
+            layout["text_top"],
             text=card.text,
-            width=card.width - 10,
-            font=("Arial", 10),
+            width=layout["text_width"],
+            anchor="n",
+            font=("Arial", 10, "bold"),
             fill=self.theme["text"],
             tags=("card_text", f"card_{card.id}"),
         )
+        text_bbox = self.canvas.bbox(text_id) or (
+            card.x,
+            layout["text_top"],
+            card.x,
+            layout["text_top"] + 14,
+        )
+        text_bg_id = self.canvas.create_rectangle(
+            text_bbox[0] - self.text_margin,
+            text_bbox[1] - self.text_margin,
+            text_bbox[2] + self.text_margin,
+            text_bbox[3] + self.text_margin,
+            fill=card.color,
+            outline="",
+            tags=("card_text_bg", f"card_{card.id}"),
+        )
+        self.canvas.tag_lower(text_bg_id, text_id)
 
         card.rect_id = rect_id
         card.text_id = text_id
+        card.text_bg_id = text_bg_id
 
     def draw_frame(self, frame: Frame) -> None:
         rect_id = self.canvas.create_rectangle(

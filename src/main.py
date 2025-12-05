@@ -643,6 +643,10 @@ class BoardApp:
         return path
 
     def _clear_attachment_previews_for_card(self, card_id: int) -> None:
+        card = self.cards.get(card_id)
+        if card and card.image_id:
+            self.canvas.delete(card.image_id)
+            card.image_id = None
         to_delete = [key for key in self.attachment_items if key[0] == card_id]
         for key in to_delete:
             item_id = self.attachment_items.pop(key, None)
@@ -1006,36 +1010,44 @@ class BoardApp:
 
         self._clear_attachment_previews_for_card(card_id)
 
-        for idx, attachment in enumerate(card.attachments):
-            image = self._load_attachment_image(attachment)
-            if image is None:
-                continue
-            preview = self._prepare_icon_image(image)
-            if preview is None:
-                continue
-            photo = ImageTk.PhotoImage(preview)
-            offset_x = attachment.offset_x
-            offset_y = attachment.offset_y
-            if offset_x == 0 and offset_y == 0:
-                offset_x, offset_y = self._compute_attachment_offset(card, preview.size, idx)
-                attachment.offset_x = offset_x
-                attachment.offset_y = offset_y
-            canvas_x = card.x + offset_x
-            canvas_y = card.y + offset_y
-            item_id = self.canvas.create_image(
-                canvas_x,
-                canvas_y,
-                image=photo,
-                anchor="center",
-                tags=("attachment_preview", f"attachment_{card_id}_{attachment.id}"),
-            )
-            self.canvas.tag_bind(
-                f"attachment_{card_id}_{attachment.id}",
-                "<Button-1>",
-                self.on_attachment_click,
-            )
-            self.attachment_items[(card_id, attachment.id)] = item_id
-            self.attachment_tk_images[(card_id, attachment.id)] = photo
+        attachment = card.attachments[0]
+        image = self._load_attachment_image(attachment)
+        if image is None:
+            return
+
+        layout = self.canvas_view.compute_card_layout(card)
+        max_width = int(layout["image_width"])
+        max_height = int(layout["image_height"])
+        if max_width <= 0 or max_height <= 0:
+            return
+
+        preview = self._prepare_preview_image(image, max_size=(max_width, max_height))
+        if preview is None:
+            return
+        photo = ImageTk.PhotoImage(preview)
+
+        center_y = layout["image_top"] + layout["image_height"] / 2
+        item_id = self.canvas.create_image(
+            card.x,
+            center_y,
+            image=photo,
+            anchor="center",
+            tags=("attachment_preview", f"attachment_{card_id}_{attachment.id}"),
+        )
+        if card.text_bg_id:
+            self.canvas.tag_lower(item_id, card.text_bg_id)
+        self.canvas.tag_bind(
+            f"attachment_{card_id}_{attachment.id}",
+            "<Button-1>",
+            self.on_attachment_click,
+        )
+        self.attachment_items[(card_id, attachment.id)] = item_id
+        self.attachment_tk_images[(card_id, attachment.id)] = photo
+        card.image_id = item_id
+        if card.text_bg_id:
+            self.canvas.tag_raise(card.text_bg_id)
+        if card.text_id:
+            self.canvas.tag_raise(card.text_id)
 
     def render_all_attachments(self) -> None:
         for card_id in list(self.cards.keys()):
@@ -1045,18 +1057,7 @@ class BoardApp:
         card = self.cards.get(card_id)
         if not card or not card.attachments:
             return
-        for attachment in card.attachments:
-            key = (card_id, attachment.id)
-            item_id = self.attachment_items.get(key)
-            if item_id:
-                if scale is not None:
-                    attachment.offset_x *= scale
-                    attachment.offset_y *= scale
-                self.canvas.coords(
-                    item_id,
-                    card.x + attachment.offset_x,
-                    card.y + attachment.offset_y,
-                )
+        self.render_card_attachments(card_id)
 
     def _read_clipboard_image(self):
         try:
@@ -1322,10 +1323,9 @@ class BoardApp:
             x2 = gx + card.width / 2
             y2 = gy + card.height / 2
             self.canvas.coords(card.rect_id, x1, y1, x2, y2)
-            self.canvas.coords(card.text_id, gx, gy)
+            self.update_card_layout(card_id, redraw_attachment=False)
             self.update_card_handles_positions(card_id)
             self.update_connections_for_card(card_id)
-            self.update_attachment_positions(card_id)
 
     # ---------- Карточки ----------
 
@@ -1437,7 +1437,14 @@ class BoardApp:
         card = self.cards.pop(card_id, None)
         if not card:
             return
-        for item_id in (card.rect_id, card.text_id, card.resize_handle_id, card.connect_handle_id):
+        for item_id in (
+            card.rect_id,
+            card.text_id,
+            card.text_bg_id,
+            card.image_id,
+            card.resize_handle_id,
+            card.connect_handle_id,
+        ):
             if item_id:
                 self.canvas.delete(item_id)
         self._clear_attachment_previews_for_card(card_id)
@@ -1638,6 +1645,20 @@ class BoardApp:
             self.canvas.delete(card.connect_handle_id)
             card.connect_handle_id = None
 
+    def update_card_layout(self, card_id: int, *, redraw_attachment: bool = True) -> None:
+        card = self.cards.get(card_id)
+        if not card:
+            return
+        layout = self.canvas_view.compute_card_layout(card)
+        self.canvas_view.apply_card_layout(card, layout)
+        if card.attachments and (redraw_attachment or not card.image_id):
+            self.render_card_attachments(card_id)
+        elif card.attachments and card.image_id:
+            center_y = layout["image_top"] + layout["image_height"] / 2
+            self.canvas.coords(card.image_id, card.x, center_y)
+            if card.text_bg_id:
+                self.canvas.tag_lower(card.image_id, card.text_bg_id)
+
     def update_card_handles_positions(self, card_id):
         card = self.cards.get(card_id)
         if not card:
@@ -1720,7 +1741,7 @@ class BoardApp:
             card.width = x2 - x1
             card.height = y2 - y1
             self.update_card_handles_positions(card.id)
-            self.update_attachment_positions(card.id, scale=scale)
+            self.update_card_layout(card.id)
 
         bbox = self.canvas.bbox("all")
         if bbox:
@@ -1793,6 +1814,8 @@ class BoardApp:
             return
         card.color = color
         self.canvas.itemconfig(card.rect_id, fill=color)
+        if card.text_bg_id:
+            self.canvas.itemconfig(card.text_bg_id, fill=color)
         self.push_history()
 
     def edit_card_text_dialog(self):
@@ -1812,6 +1835,7 @@ class BoardApp:
             return
         card.text = new_text
         self.canvas.itemconfig(card.text_id, text=new_text)
+        self.update_card_layout(card_id)
 
     # ---------- Inline-редактирование карточек и выравнивание ----------
     
@@ -1917,8 +1941,8 @@ class BoardApp:
         new_text = editor_text.strip()
         card.text = new_text
         self.canvas.itemconfig(card.text_id, text=new_text)
-        self.canvas.itemconfig(card.text_id, width=card.width - 10)
-    
+        self.update_card_layout(card_id)
+
         self.push_history()
     
     def _require_multiple_selected_cards(self):
@@ -1949,11 +1973,10 @@ class BoardApp:
             x2 = card.x + card.width / 2
             y2 = card.y + card.height / 2
             self.canvas.coords(card.rect_id, x1, y1, x2, y2)
-            self.canvas.coords(card.text_id, card.x, card.y)
+            self.update_card_layout(cid, redraw_attachment=False)
             self.update_card_handles_positions(cid)
             self.update_connections_for_card(cid)
-            self.update_attachment_positions(cid)
-    
+
         self.push_history()
     
     def align_selected_cards_top(self):
@@ -1974,10 +1997,9 @@ class BoardApp:
             x2 = card.x + card.width / 2
             y2 = card.y + card.height / 2
             self.canvas.coords(card.rect_id, x1, y1, x2, y2)
-            self.canvas.coords(card.text_id, card.x, card.y)
+            self.update_card_layout(cid, redraw_attachment=False)
             self.update_card_handles_positions(cid)
             self.update_connections_for_card(cid)
-            self.update_attachment_positions(cid)
     
         self.push_history()
     
@@ -1997,12 +2019,10 @@ class BoardApp:
             x2 = card.x + ref_w / 2
             y2 = card.y + card.height / 2
             self.canvas.coords(card.rect_id, x1, y1, x2, y2)
-            self.canvas.itemconfig(card.text_id, width=ref_w - 10)
-            self.canvas.coords(card.text_id, card.x, card.y)
+            self.update_card_layout(cid)
             self.update_card_handles_positions(cid)
             self.update_connections_for_card(cid)
-            self.update_attachment_positions(cid)
-    
+
         self.push_history()
     
     def equalize_selected_cards_height(self):
@@ -2021,11 +2041,10 @@ class BoardApp:
             x2 = card.x + card.width / 2
             y2 = card.y + ref_h / 2
             self.canvas.coords(card.rect_id, x1, y1, x2, y2)
-            self.canvas.coords(card.text_id, card.x, card.y)
+            self.update_card_layout(cid)
             self.update_card_handles_positions(cid)
             self.update_connections_for_card(cid)
-            self.update_attachment_positions(cid)
-    
+
         self.push_history()
     
     # ---------- Настройки сетки (UI-обработчики) ----------
@@ -2173,6 +2192,7 @@ class BoardApp:
         for nid in id_map.values():
             self.select_card(nid, additive=True)
 
+        self.update_minimap()
         self.push_history()
 
     def on_duplicate(self, event=None):

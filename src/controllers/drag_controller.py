@@ -149,10 +149,9 @@ class DragController:
                 x2 = new_x2
                 y2 = new_y2
                 app.canvas.coords(card.rect_id, x1, y1, x2, y2)
-                app.canvas.coords(card.text_id, card.x, card.y)
+                app.update_card_layout(card_id)
                 app.update_card_handles_positions(card_id)
                 app.update_connections_for_card(card_id)
-                app.update_attachment_positions(card_id)
                 app.drag_data["moved"] = True
                 return
 
@@ -184,10 +183,9 @@ class DragController:
                     x2 = card.x + card.width / 2
                     y2 = card.y + card.height / 2
                     app.canvas.coords(card.rect_id, x1, y1, x2, y2)
-                    app.canvas.coords(card.text_id, card.x, card.y)
+                    app.update_card_layout(card_id, redraw_attachment=False)
                     app.update_card_handles_positions(card_id)
                     app.update_connections_for_card(card_id)
-                    app.update_attachment_positions(card_id)
 
             elif mode == "frame":
                 frame_id = app.drag_data["frame_id"]
@@ -207,10 +205,9 @@ class DragController:
                     x2 = card.x + card.width / 2
                     y2 = card.y + card.height / 2
                     app.canvas.coords(card.rect_id, x1, y1, x2, y2)
-                    app.canvas.coords(card.text_id, card.x, card.y)
+                    app.update_card_layout(card_id, redraw_attachment=False)
                     app.update_card_handles_positions(card_id)
                     app.update_connections_for_card(card_id)
-                    app.update_attachment_positions(card_id)
 
         elif app.selection_start is not None and app.selection_rect_id is not None:
             x0, y0 = app.selection_start

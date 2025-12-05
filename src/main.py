@@ -17,6 +17,7 @@ from .view.canvas_view import CanvasView
 
 class BoardApp:
     def __init__(self):
+        self.max_attachment_bytes = 5 * 1024 * 1024
         self.root = tk.Tk()
         self.root.title("Mini Miro Board (Python)")
         self.root.geometry("1200x800")
@@ -951,6 +952,12 @@ class BoardApp:
             return True
 
         image, _fmt, mime_type, name = result
+        if not mime_type.startswith("image/"):
+            messagebox.showerror(
+                "Вставка изображения",
+                "Формат изображения не поддерживается. Попробуйте PNG, JPEG, GIF или WebP.",
+            )
+            return True
         try:
             self._ensure_attachments_dir()
         except OSError:
@@ -964,6 +971,14 @@ class BoardApp:
             rgb_image.save(storage_path, format="PNG")
             buffer = io.BytesIO()
             rgb_image.save(buffer, format="PNG")
+            payload = buffer.getvalue()
+            if len(payload) > self.max_attachment_bytes:
+                messagebox.showerror(
+                    "Вставка изображения",
+                    "Размер вложения превышает допустимый предел (5 МБ).",
+                )
+                storage_path.unlink(missing_ok=True)
+                return True
             data_base64 = base64.b64encode(buffer.getvalue()).decode("ascii")
         except OSError as exc:
             messagebox.showerror("Вставка изображения", f"Не удалось сохранить изображение:\n{exc}")
@@ -978,7 +993,11 @@ class BoardApp:
             height=image.height,
             offset_x=0.0,
             offset_y=0.0,
-            storage_path=str(storage_path.relative_to(Path.cwd())),
+            storage_path=str(
+                storage_path.relative_to(Path.cwd())
+                if storage_path.is_relative_to(Path.cwd())
+                else storage_path
+            ),
             data_base64=data_base64,
         )
         card.attachments.append(attachment)
@@ -1021,6 +1040,15 @@ class BoardApp:
 
         source_path = Path(filename)
         try:
+            if source_path.stat().st_size > self.max_attachment_bytes:
+                messagebox.showerror(
+                    "Прикрепить изображение",
+                    "Размер вложения превышает допустимый предел (5 МБ).",
+                )
+                return True
+        except OSError:
+            return True
+        try:
             image = Image.open(source_path)
             image.load()
         except OSError as exc:
@@ -1045,8 +1073,11 @@ class BoardApp:
         detected_format = image.format or ext_map.get(source_path.suffix.lower()) or "PNG"
         mime_type = Image.MIME.get(detected_format, "image/png")
         if not mime_type.startswith("image/"):
-            detected_format = "PNG"
-            mime_type = "image/png"
+            messagebox.showerror(
+                "Прикрепить изображение",
+                "Формат изображения не поддерживается. Попробуйте PNG, JPEG, GIF или WebP.",
+            )
+            return True
 
         storage_ext = source_path.suffix.lower() if mime_type.startswith("image/") else ".png"
         if not storage_ext:
@@ -1073,7 +1104,11 @@ class BoardApp:
             height=image.height,
             offset_x=0.0,
             offset_y=0.0,
-            storage_path=str(storage_path.relative_to(Path.cwd())),
+            storage_path=str(
+                storage_path.relative_to(Path.cwd())
+                if storage_path.is_relative_to(Path.cwd())
+                else storage_path
+            ),
         )
         card.attachments.append(attachment)
         self.render_card_attachments(card_id)

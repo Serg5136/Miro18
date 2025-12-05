@@ -745,6 +745,82 @@ class BoardApp:
             return None
         return base64.b64encode(payload).decode("ascii")
 
+    def _attach_image_to_card(
+        self,
+        card: ModelCard,
+        image,
+        *,
+        name: str,
+        mime_type: str,
+        source_type: str,
+        storage_ext: str,
+        embed_base64: bool,
+    ) -> bool:
+        attachment = self._store_attachment_image(
+            card,
+            image,
+            name=name,
+            mime_type=mime_type,
+            source_type=source_type,
+            storage_ext=storage_ext,
+            embed_base64=embed_base64,
+        )
+        if attachment is None:
+            messagebox.showerror(
+                "Вложения",
+                "Не удалось сохранить изображение или его размер превышает допустимый предел (5 МБ)",
+            )
+            return False
+
+        layout = self.canvas_view.compute_card_layout(card)
+        self._auto_position_attachment(card, attachment, layout)
+        card.attachments.append(attachment)
+        self.render_card_attachments(card.id)
+        self.push_history()
+        return True
+
+    def _open_image_from_path(self, source_path: Path, *, dialog_title: str):
+        try:
+            from PIL import Image
+        except ImportError:
+            messagebox.showerror(
+                dialog_title,
+                "Для добавления изображений нужен пакет Pillow.\n"
+                "Установите его командой:\n\npip install pillow",
+            )
+            return None
+
+        try:
+            if source_path.stat().st_size > self.max_attachment_bytes:
+                messagebox.showerror(
+                    dialog_title,
+                    "Размер вложения превышает допустимый предел (5 МБ).",
+                )
+                return None
+        except OSError:
+            return None
+
+        try:
+            image = Image.open(source_path)
+            image.load()
+        except OSError as exc:
+            messagebox.showerror(
+                dialog_title,
+                f"Не удалось открыть изображение:\n{exc}",
+            )
+            return None
+
+        mime_type = Image.MIME.get(image.format, "image/png")
+        if not mime_type.startswith("image/"):
+            messagebox.showerror(
+                dialog_title,
+                "Формат изображения не поддерживается. Попробуйте PNG, JPEG, GIF или WebP.",
+            )
+            return None
+
+        storage_ext = source_path.suffix or ".png"
+        return image, mime_type, storage_ext
+
     def _store_attachment_image(
         self,
         card: ModelCard,
@@ -1391,6 +1467,23 @@ class BoardApp:
             )
             return True
 
+        if self.selected_cards:
+            card_id = self.selected_card_id or next(iter(self.selected_cards))
+            card = self.cards.get(card_id)
+            if card is None:
+                return True
+
+            self._attach_image_to_card(
+                card,
+                image,
+                name=name,
+                mime_type=mime_type,
+                source_type="clipboard",
+                storage_ext=self._extension_from_mime(mime_type),
+                embed_base64=True,
+            )
+            return True
+
         return self._create_card_with_image(
             image,
             name=name,
@@ -1408,44 +1501,18 @@ class BoardApp:
         base_position: tuple[float, float],
         offset: tuple[float, float] = (0.0, 0.0),
     ) -> bool:
-        try:
-            from PIL import Image
-        except ImportError:
-            messagebox.showerror(
-                "Вложения",
-                "Для добавления изображений нужен пакет Pillow.\n"
-                "Установите его командой:\n\npip install pillow",
-            )
+        opened = self._open_image_from_path(source_path, dialog_title="Изображение")
+        if opened is None:
             return False
 
-        try:
-            if source_path.stat().st_size > self.max_attachment_bytes:
-                messagebox.showerror(
-                    "Изображение",
-                    "Размер вложения превышает допустимый предел (5 МБ).",
-                )
-                return False
-        except OSError:
-            return False
-
-        try:
-            image = Image.open(source_path)
-            image.load()
-        except OSError as exc:
-            messagebox.showerror(
-                "Изображение",
-                f"Не удалось открыть изображение:\n{exc}",
-            )
-            return False
-
-        mime_type = Image.MIME.get(image.format, "image/png") or "image/png"
+        image, mime_type, storage_ext = opened
         position = (base_position[0] + offset[0], base_position[1] + offset[1])
         return self._create_card_with_image(
             image,
             name=source_path.name,
             mime_type=mime_type,
             source_type="file",
-            storage_ext=source_path.suffix or ".png",
+            storage_ext=storage_ext,
             position=position,
         )
 
@@ -1455,6 +1522,33 @@ class BoardApp:
             return
         paths = [Path(p) for p in self.root.splitlist(data)]
         if not paths:
+            return
+
+        if self.selected_cards:
+            card_id = self.selected_card_id or next(iter(self.selected_cards))
+            card = self.cards.get(card_id)
+            if card is None:
+                return
+            attached_any = False
+            for path in paths:
+                if not path.is_file():
+                    continue
+                opened = self._open_image_from_path(path, dialog_title="Изображение")
+                if opened is None:
+                    continue
+                image, mime_type, storage_ext = opened
+                attached = self._attach_image_to_card(
+                    card,
+                    image,
+                    name=path.name,
+                    mime_type=mime_type,
+                    source_type="file",
+                    storage_ext=storage_ext,
+                    embed_base64=False,
+                )
+                attached_any = attached_any or attached
+            if attached_any:
+                self.select_card(card.id, additive=False)
             return
 
         base_position = self._get_canvas_point_from_event(event)
@@ -1475,6 +1569,7 @@ class BoardApp:
             self.update_minimap()
 
     def _attach_image_from_file(self) -> bool:
+        opened_exts = None
         try:
             from PIL import Image
         except ImportError:
@@ -1484,6 +1579,8 @@ class BoardApp:
                 "Установите его командой:\n\npip install pillow",
             )
             return True
+        else:
+            opened_exts = Image.registered_extensions()
 
         if not self.selected_cards:
             messagebox.showwarning(
@@ -1494,11 +1591,14 @@ class BoardApp:
 
         ext_map = {
             ext: fmt
-            for ext, fmt in Image.registered_extensions().items()
+            for ext, fmt in opened_exts.items()
             if Image.MIME.get(fmt, "").startswith("image/")
         }
         patterns = " ".join(f"*{ext}" for ext in sorted(ext_map))
-        filetypes = [("Изображения", patterns or "*.png *.jpg *.jpeg *.bmp *.gif *.webp"), ("Все файлы", "*.*")]
+        filetypes = [
+            ("Изображения", patterns or "*.png *.jpg *.jpeg *.bmp *.gif *.webp"),
+            ("Все файлы", "*.*"),
+        ]
 
         filename = filedialog.askopenfilename(
             defaultextension=".png",
@@ -1508,83 +1608,25 @@ class BoardApp:
             return False
 
         source_path = Path(filename)
-        try:
-            if source_path.stat().st_size > self.max_attachment_bytes:
-                messagebox.showerror(
-                    "Прикрепить изображение",
-                    "Размер вложения превышает допустимый предел (5 МБ).",
-                )
-                return True
-        except OSError:
+        opened = self._open_image_from_path(source_path, dialog_title="Прикрепить изображение")
+        if opened is None:
             return True
-        try:
-            image = Image.open(source_path)
-            image.load()
-        except OSError as exc:
-            messagebox.showerror(
-                "Прикрепить изображение",
-                f"Не удалось открыть изображение:\n{exc}",
-            )
-            return True
+        image, mime_type, storage_ext = opened
 
         card_id = self.selected_card_id or next(iter(self.selected_cards))
         card = self.cards.get(card_id)
         if card is None:
             return True
 
-        try:
-            self._ensure_attachments_dir()
-        except OSError:
-            return True
-
-        attachment_id = max((a.id for a in card.attachments), default=0) + 1
-
-        detected_format = image.format or ext_map.get(source_path.suffix.lower()) or "PNG"
-        mime_type = Image.MIME.get(detected_format, "image/png")
-        if not mime_type.startswith("image/"):
-            messagebox.showerror(
-                "Прикрепить изображение",
-                "Формат изображения не поддерживается. Попробуйте PNG, JPEG, GIF или WebP.",
-            )
-            return True
-
-        storage_ext = source_path.suffix.lower() if mime_type.startswith("image/") else ".png"
-        if not storage_ext:
-            storage_ext = ".png"
-
-        storage_path = self.attachments_dir / f"{card.id}-{attachment_id}{storage_ext}"
-
-        try:
-            save_image = image.convert("RGBA") if detected_format.upper() == "PNG" else image.convert("RGB")
-            save_image.save(storage_path, format=detected_format)
-        except OSError as exc:
-            messagebox.showerror(
-                "Прикрепить изображение",
-                f"Не удалось сохранить изображение:\n{exc}",
-            )
-            return True
-
-        attachment = Attachment(
-            id=attachment_id,
+        self._attach_image_to_card(
+            card,
+            image,
             name=source_path.name,
-            source_type="file",
             mime_type=mime_type,
-            width=image.width,
-            height=image.height,
-            offset_x=0.0,
-            offset_y=0.0,
-            preview_scale=1.0,
-            storage_path=str(
-                storage_path.relative_to(Path.cwd())
-                if storage_path.is_relative_to(Path.cwd())
-                else storage_path
-            ),
+            source_type="file",
+            storage_ext=storage_ext,
+            embed_base64=False,
         )
-        layout = self.canvas_view.compute_card_layout(card)
-        self._auto_position_attachment(card, attachment, layout)
-        card.attachments.append(attachment)
-        self.render_card_attachments(card_id)
-        self.push_history()
         return True
 
     def _attach_clipboard_image_to_card(self) -> bool:
@@ -1613,7 +1655,7 @@ class BoardApp:
         if card is None:
             return True
 
-        attachment = self._store_attachment_image(
+        self._attach_image_to_card(
             card,
             image,
             name=name or "clipboard.png",
@@ -1622,18 +1664,6 @@ class BoardApp:
             storage_ext=self._extension_from_mime(mime_type),
             embed_base64=True,
         )
-        if attachment is None:
-            messagebox.showerror(
-                "Вложения",
-                "Не удалось сохранить изображение или его размер превышает допустимый предел (5 МБ)",
-            )
-            return True
-
-        layout = self.canvas_view.compute_card_layout(card)
-        self._auto_position_attachment(card, attachment, layout)
-        card.attachments.append(attachment)
-        self.render_card_attachments(card_id)
-        self.push_history()
         return True
 
     def attach_image_from_file(self):

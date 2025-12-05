@@ -31,11 +31,14 @@ class ToolbarFactory:
 
         btn_attach_image = tk.Button(
             toolbar,
-            text="📎 Прикрепить изображение",
+            text="📎 Прикрепить к карточке",
             command=app.attach_image_from_file,
         )
         btn_attach_image.pack(side="left", padx=(10, 2), pady=4)
-        add_tooltip(btn_attach_image, "Добавить изображение к выделенной карточке")
+        add_tooltip(
+            btn_attach_image,
+            "Прикрепить файл-изображение к выделенной карточке без создания новой",
+        )
 
         btn_text_color = tk.Button(
             toolbar,

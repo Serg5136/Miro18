@@ -36,6 +36,14 @@ class ToolbarFactory:
         )
         btn_attach_image.pack(side="left", padx=(10, 2), pady=4)
         add_tooltip(btn_attach_image, "Добавить изображение к выделенной карточке")
+
+        btn_text_color = tk.Button(
+            toolbar,
+            text="🎨 Цвет текста",
+            command=app.change_text_color,
+        )
+        btn_text_color.pack(side="left", padx=2, pady=4)
+        add_tooltip(btn_text_color, "Изменить цвет текста карточек для текущей темы")
         return toolbar
 
 

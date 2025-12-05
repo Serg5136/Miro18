@@ -42,9 +42,14 @@ THEMES: Dict[str, Dict[str, str]] = {
 }
 
 
-def load_theme_name(themes: Dict[str, Dict[str, str]] = THEMES, filename: str = CONFIG_FILENAME) -> str:
-    """Load the selected theme name from config file if valid."""
+def load_theme_settings(
+    themes: Dict[str, Dict[str, str]] = THEMES, filename: str = CONFIG_FILENAME
+) -> tuple[str, Dict[str, str]]:
+    """Load theme name and per-theme text colors from config file."""
+
     theme_name = "light"
+    text_colors = {name: data.get("text", "#000000") for name, data in themes.items()}
+
     if os.path.exists(filename):
         try:
             with open(filename, "r", encoding="utf-8") as f:
@@ -52,15 +57,30 @@ def load_theme_name(themes: Dict[str, Dict[str, str]] = THEMES, filename: str = 
             saved_theme = cfg.get("theme")
             if saved_theme in themes:
                 theme_name = saved_theme
+
+            saved_colors = cfg.get("text_colors", {})
+            if isinstance(saved_colors, dict):
+                for name, color in saved_colors.items():
+                    if name in text_colors and isinstance(color, str):
+                        text_colors[name] = color
         except Exception:
             pass
-    return theme_name
+    return theme_name, text_colors
 
 
-def save_theme_name(theme_name: str, filename: str = CONFIG_FILENAME) -> None:
-    """Persist the selected theme name to config file."""
+def save_theme_settings(
+    theme_name: str,
+    text_colors: Dict[str, str],
+    filename: str = CONFIG_FILENAME,
+) -> None:
+    """Persist the selected theme name and text colors to config file."""
     try:
         with open(filename, "w", encoding="utf-8") as f:
-            json.dump({"theme": theme_name}, f, ensure_ascii=False, indent=2)
+            json.dump(
+                {"theme": theme_name, "text_colors": text_colors},
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
     except Exception:
         pass

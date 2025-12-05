@@ -115,6 +115,7 @@ class BoardApp:
 
         self._build_ui()
         self.canvas_view = CanvasView(self.canvas, self.minimap, self.theme)
+        self._setup_dnd()
         self.init_board_state()
         self.update_controls_state()
 
@@ -200,6 +201,20 @@ class BoardApp:
             label="Вставить",
             command=self.on_paste,
         )
+
+    def _setup_dnd(self) -> None:
+        """Подключает обработчик drag-and-drop файлов, если поддерживается tkdnd."""
+
+        drop_target_register = getattr(self.canvas, "drop_target_register", None)
+        dnd_bind = getattr(self.canvas, "dnd_bind", None)
+        if not drop_target_register or not dnd_bind:
+            return
+        try:
+            drop_target_register("DND_Files")
+            dnd_bind("<<Drop>>", self.on_drop_files)
+        except tk.TclError:
+            # tkdnd не установлен — тихо пропускаем
+            return
     
     def on_canvas_right_click(self, event):
         """
@@ -675,6 +690,76 @@ class BoardApp:
             return None
         return base64.b64encode(payload).decode("ascii")
 
+    def _store_attachment_image(
+        self,
+        card: ModelCard,
+        image,
+        *,
+        name: str,
+        mime_type: str,
+        source_type: str,
+        storage_ext: str,
+        embed_base64: bool,
+    ) -> Attachment | None:
+        try:
+            self._ensure_attachments_dir()
+        except OSError:
+            return None
+
+        attachment_id = max((a.id for a in card.attachments), default=0) + 1
+        if not storage_ext:
+            storage_ext = self._extension_from_mime(mime_type)
+        storage_ext = storage_ext if storage_ext.startswith(".") else f".{storage_ext}"
+        target_path = self.attachments_dir / f"{card.id}-{attachment_id}{storage_ext}"
+
+        target_format = (
+            image.format
+            or {
+                ".jpg": "JPEG",
+                ".jpeg": "JPEG",
+                ".png": "PNG",
+                ".gif": "GIF",
+                ".webp": "WEBP",
+            }.get(storage_ext.lower(), "PNG")
+        )
+
+        try:
+            save_image = image.convert("RGBA") if target_format.upper() == "PNG" else image.convert("RGB")
+            buffer = io.BytesIO()
+            save_image.save(buffer, format=target_format)
+            payload = buffer.getvalue()
+        except OSError:
+            return None
+
+        if len(payload) > self.max_attachment_bytes:
+            return None
+
+        try:
+            target_path.write_bytes(payload)
+        except OSError:
+            return None
+
+        data_base64 = base64.b64encode(payload).decode("ascii") if embed_base64 else None
+
+        storage_str = (
+            str(target_path.relative_to(Path.cwd()))
+            if target_path.is_relative_to(Path.cwd())
+            else str(target_path)
+        )
+
+        return Attachment(
+            id=attachment_id,
+            name=name,
+            source_type=source_type,
+            mime_type=mime_type,
+            width=image.width,
+            height=image.height,
+            offset_x=0.0,
+            offset_y=0.0,
+            storage_path=storage_str,
+            data_base64=data_base64,
+        )
+
     def _prepare_attachment_for_save(self, attachment: Attachment) -> Attachment:
         prepared = copy.copy(attachment)
         if not prepared.data_base64:
@@ -683,6 +768,52 @@ class BoardApp:
                 prepared.data_base64 = data_base64
                 attachment.data_base64 = data_base64
         return prepared
+
+    def _create_card_with_image(
+        self,
+        image,
+        *,
+        name: str,
+        mime_type: str,
+        source_type: str,
+        storage_ext: str,
+        event=None,
+        position: tuple[float, float] | None = None,
+        embed_base64: bool = False,
+    ) -> bool:
+        width, height = self._compute_image_card_size(image)
+        if position is None:
+            cx, cy = self._get_canvas_point_from_event(event)
+        else:
+            cx, cy = position
+        card_id = self.create_card(cx, cy, name or "Изображение", width=width, height=height)
+        card = self.cards.get(card_id)
+        if not card:
+            return False
+
+        attachment = self._store_attachment_image(
+            card,
+            image,
+            name=name or "image.png",
+            mime_type=mime_type,
+            source_type=source_type,
+            storage_ext=storage_ext,
+            embed_base64=embed_base64,
+        )
+        if attachment is None:
+            messagebox.showerror(
+                "Изображение",
+                "Не удалось сохранить изображение или его размер превышает допустимый предел (5 МБ)",
+            )
+            self._delete_card_by_id(card_id)
+            return True
+
+        card.attachments.append(attachment)
+        self.render_card_attachments(card_id)
+        self.select_card(card_id, additive=False)
+        self.push_history()
+        self.update_minimap()
+        return True
 
     @staticmethod
     def _extension_from_mime(mime_type: str) -> str:
@@ -770,6 +901,34 @@ class BoardApp:
         offset_x = -card.width / 2 + padding + thumb_size[0] / 2 + col * (thumb_size[0] + padding)
         offset_y = -card.height / 2 + padding + thumb_size[1] / 2 + row * (thumb_size[1] + padding)
         return offset_x, offset_y
+
+    def _compute_image_card_size(self, image) -> tuple[float, float]:
+        padding = 40
+        max_dim = 320
+        width = max(180, min(image.width + padding, max_dim))
+        height = max(120, min(image.height + padding, max_dim))
+        return float(width), float(height)
+
+    def _get_canvas_point_from_event(self, event) -> tuple[float, float]:
+        if event is None:
+            cx = self.canvas.canvasx(self.canvas.winfo_width() // 2)
+            cy = self.canvas.canvasy(self.canvas.winfo_height() // 2)
+            return cx, cy
+
+        if hasattr(event, "x") and hasattr(event, "y"):
+            try:
+                return self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
+            except Exception:
+                pass
+
+        if hasattr(event, "x_root") and hasattr(event, "y_root"):
+            local_x = event.x_root - self.canvas.winfo_rootx()
+            local_y = event.y_root - self.canvas.winfo_rooty()
+            return self.canvas.canvasx(local_x), self.canvas.canvasy(local_y)
+
+        cx = self.canvas.canvasx(self.canvas.winfo_width() // 2)
+        cy = self.canvas.canvasy(self.canvas.winfo_height() // 2)
+        return cx, cy
 
     def _get_attachment(self, card_id: int, attachment_id: int) -> tuple[ModelCard | None, Attachment | None]:
         card = self.cards.get(card_id)
@@ -934,22 +1093,10 @@ class BoardApp:
                 return image, image.format or "PNG", mime, path.name
         return None
 
-    def _attach_clipboard_image_to_card(self) -> bool:
+    def _paste_clipboard_image_as_card(self, event=None) -> bool:
         result = self._read_clipboard_image()
         if result is None:
             return False
-
-        if not self.selected_cards:
-            messagebox.showwarning(
-                "Вставка изображения",
-                "Выберите карточку, чтобы добавить вложение.",
-            )
-            return True
-
-        card_id = self.selected_card_id or next(iter(self.selected_cards))
-        card = self.cards.get(card_id)
-        if card is None:
-            return True
 
         image, _fmt, mime_type, name = result
         if not mime_type.startswith("image/"):
@@ -958,52 +1105,89 @@ class BoardApp:
                 "Формат изображения не поддерживается. Попробуйте PNG, JPEG, GIF или WebP.",
             )
             return True
-        try:
-            self._ensure_attachments_dir()
-        except OSError:
-            return True
 
-        attachment_id = max((a.id for a in card.attachments), default=0) + 1
-        storage_path = self.attachments_dir / f"{card.id}-{attachment_id}.png"
+        return self._create_card_with_image(
+            image,
+            name=name,
+            mime_type=mime_type,
+            source_type="clipboard",
+            storage_ext=".png",
+            event=event,
+            embed_base64=True,
+        )
+
+    def _create_card_from_path(
+        self,
+        source_path: Path,
+        *,
+        base_position: tuple[float, float],
+        offset: tuple[float, float] = (0.0, 0.0),
+    ) -> bool:
+        try:
+            from PIL import Image
+        except ImportError:
+            messagebox.showerror(
+                "Вложения",
+                "Для добавления изображений нужен пакет Pillow.\n"
+                "Установите его командой:\n\npip install pillow",
+            )
+            return False
 
         try:
-            rgb_image = image.convert("RGBA")
-            rgb_image.save(storage_path, format="PNG")
-            buffer = io.BytesIO()
-            rgb_image.save(buffer, format="PNG")
-            payload = buffer.getvalue()
-            if len(payload) > self.max_attachment_bytes:
+            if source_path.stat().st_size > self.max_attachment_bytes:
                 messagebox.showerror(
-                    "Вставка изображения",
+                    "Изображение",
                     "Размер вложения превышает допустимый предел (5 МБ).",
                 )
-                storage_path.unlink(missing_ok=True)
-                return True
-            data_base64 = base64.b64encode(buffer.getvalue()).decode("ascii")
-        except OSError as exc:
-            messagebox.showerror("Вставка изображения", f"Не удалось сохранить изображение:\n{exc}")
-            return True
+                return False
+        except OSError:
+            return False
 
-        attachment = Attachment(
-            id=attachment_id,
-            name=name,
-            source_type="clipboard",
+        try:
+            image = Image.open(source_path)
+            image.load()
+        except OSError as exc:
+            messagebox.showerror(
+                "Изображение",
+                f"Не удалось открыть изображение:\n{exc}",
+            )
+            return False
+
+        mime_type = Image.MIME.get(image.format, "image/png") or "image/png"
+        position = (base_position[0] + offset[0], base_position[1] + offset[1])
+        return self._create_card_with_image(
+            image,
+            name=source_path.name,
             mime_type=mime_type,
-            width=image.width,
-            height=image.height,
-            offset_x=0.0,
-            offset_y=0.0,
-            storage_path=str(
-                storage_path.relative_to(Path.cwd())
-                if storage_path.is_relative_to(Path.cwd())
-                else storage_path
-            ),
-            data_base64=data_base64,
+            source_type="file",
+            storage_ext=source_path.suffix or ".png",
+            position=position,
         )
-        card.attachments.append(attachment)
-        self.render_card_attachments(card_id)
-        self.push_history()
-        return True
+
+    def on_drop_files(self, event):
+        data = getattr(event, "data", None)
+        if not data:
+            return
+        paths = [Path(p) for p in self.root.splitlist(data)]
+        if not paths:
+            return
+
+        base_position = self._get_canvas_point_from_event(event)
+        spacing = 60
+        created_any = False
+        for idx, path in enumerate(paths):
+            if not path.is_file():
+                continue
+            offset = (spacing * (idx % 3), spacing * (idx // 3))
+            created = self._create_card_from_path(
+                path,
+                base_position=base_position,
+                offset=offset,
+            )
+            created_any = created_any or created
+
+        if created_any:
+            self.update_minimap()
 
     def _attach_image_from_file(self) -> bool:
         try:
@@ -1248,6 +1432,18 @@ class BoardApp:
         self.canvas_view.draw_card(card)
         self.cards[card_id] = card
         return card_id
+
+    def _delete_card_by_id(self, card_id: int) -> None:
+        card = self.cards.pop(card_id, None)
+        if not card:
+            return
+        for item_id in (card.rect_id, card.text_id, card.resize_handle_id, card.connect_handle_id):
+            if item_id:
+                self.canvas.delete(item_id)
+        self._clear_attachment_previews_for_card(card_id)
+        self.connections = [
+            conn for conn in self.connections if conn.from_id != card_id and conn.to_id != card_id
+        ]
 
     def get_card_id_from_item(self, item_ids):
         if not item_ids:
@@ -1939,7 +2135,7 @@ class BoardApp:
         }
 
     def on_paste(self, event=None):
-        if self._attach_clipboard_image_to_card():
+        if self._paste_clipboard_image_as_card(event):
             return
         if not self.clipboard:
             return

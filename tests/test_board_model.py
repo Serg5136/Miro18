@@ -39,9 +39,74 @@ def test_connection_backward_compatibility_and_label_change():
     assert connection.from_id == 1
     assert connection.to_id == 2
     assert connection.label == "old"
+    assert connection.direction == "end"
 
     connection.label = "updated"
-    assert connection.to_primitive() == {"from": 1, "to": 2, "label": "updated"}
+    assert connection.to_primitive() == {
+        "from": 1,
+        "to": 2,
+        "label": "updated",
+        "direction": "end",
+    }
+
+
+def test_connection_direction_toggle_single_link():
+    connection = Connection(from_id=1, to_id=2)
+
+    assert connection.direction == "end"
+
+    connection.toggle_direction()
+
+    assert connection.direction == "start"
+
+    serialized = connection.to_primitive()
+    assert serialized["direction"] == "start"
+
+    restored = Connection.from_primitive(serialized)
+    assert restored.direction == "start"
+
+
+def test_connection_with_label_preserves_direction_after_toggle():
+    connection = Connection(from_id=3, to_id=4, label="text", direction="start")
+
+    connection.toggle_direction()
+
+    assert connection.direction == "end"
+
+    restored = Connection.from_primitive(connection.to_primitive())
+
+    assert restored.label == "text"
+    assert restored.direction == "end"
+
+
+def test_connection_direction_survives_history_undo_redo():
+    initial_conn = Connection(from_id=1, to_id=2, label="edge")
+    initial_board = BoardData(cards={}, connections=[initial_conn], frames={})
+
+    history = History()
+    history.clear_and_init(initial_board.to_primitive())
+
+    toggled_conn = copy.deepcopy(initial_conn)
+    toggled_conn.toggle_direction()
+    toggled_board = BoardData(cards={}, connections=[toggled_conn], frames={})
+    history.push(toggled_board.to_primitive())
+
+    class DummyApp:
+        def __init__(self):
+            self.applied_states = []
+
+        def set_board_from_data(self, data):
+            self.applied_states.append(BoardData.from_primitive(data))
+
+    app = DummyApp()
+
+    undo_state = history.undo(app)
+    assert BoardData.from_primitive(undo_state).connections[0].direction == "end"
+    assert app.applied_states[-1].connections[0].direction == "end"
+
+    redo_state = history.redo(app)
+    assert BoardData.from_primitive(redo_state).connections[0].direction == "start"
+    assert app.applied_states[-1].connections[0].direction == "start"
 
 
 def test_frame_serialization_and_update():

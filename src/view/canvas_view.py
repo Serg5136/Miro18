@@ -219,15 +219,25 @@ class CanvasView:
 
         return sx, sy, tx, ty
 
+    def _arrow_for_direction(self, direction: str) -> str:
+        return tk.FIRST if direction == "start" else tk.LAST
+
+    def apply_connection_direction(self, connection: Connection) -> None:
+        if not connection.line_id:
+            return
+        arrow = self._arrow_for_direction(connection.direction)
+        self.canvas.itemconfig(connection.line_id, arrow=arrow)
+
     def draw_connection(self, connection: Connection, from_card: Card, to_card: Card) -> None:
         sx, sy, tx, ty = self._connection_anchors(from_card, to_card, connection)
+        arrow = self._arrow_for_direction(connection.direction)
 
         line_id = self.canvas.create_line(
             sx,
             sy,
             tx,
             ty,
-            arrow=tk.LAST,
+            arrow=arrow,
             width=2,
             fill=self.theme["connection"],
             tags=("connection",),
@@ -265,6 +275,7 @@ class CanvasView:
             sx, sy, tx, ty = self._connection_anchors(from_card, to_card, conn)
             if conn.line_id:
                 self.canvas.coords(conn.line_id, sx, sy, tx, ty)
+                self.apply_connection_direction(conn)
             if conn.label_id:
                 mx = (sx + tx) / 2
                 my = (sy + ty) / 2

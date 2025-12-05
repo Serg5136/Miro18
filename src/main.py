@@ -1,12 +1,12 @@
 import tkinter as tk
-from tkinter import simpledialog, colorchooser, filedialog, messagebox
-import json
+from tkinter import simpledialog, colorchooser, messagebox
 import copy
 from typing import Dict, List
 from .autosave import AutoSaveService
 from .board_model import Card as ModelCard, Connection as ModelConnection, Frame as ModelFrame, BoardData
 from .config import THEMES, load_theme_name, save_theme_name
 from .history import History
+from .io import files as file_io
 from .ui import LayoutBuilder
 from .view.canvas_view import CanvasView
 
@@ -1749,34 +1749,14 @@ class BoardApp:
     # ---------- Сохранение/загрузка ----------
 
     def save_board(self):
-        filename = filedialog.asksaveasfilename(
-            defaultextension=".json",
-            filetypes=[("JSON файлы", "*.json"), ("Все файлы", "*.*")]
-        )
-        if not filename:
-            return
-
         data = self.get_board_data()
-        try:
-            with open(filename, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+        if file_io.save_board(data):
             self.saved_history_index = self.history.index
             self.update_unsaved_flag()
-        except Exception as e:
-            messagebox.showerror("Ошибка сохранения", str(e))
 
     def load_board(self):
-        filename = filedialog.askopenfilename(
-            defaultextension=".json",
-            filetypes=[("JSON файлы", "*.json"), ("Все файлы", "*.*")]
-        )
-        if not filename:
-            return
-        try:
-            with open(filename, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception as e:
-            messagebox.showerror("Ошибка загрузки", str(e))
+        data = file_io.load_board()
+        if data is None:
             return
 
         self.set_board_from_data(data)
@@ -1791,133 +1771,14 @@ class BoardApp:
     # ---------- Экспорт в PNG (как было раньше) ----------
 
     def export_png(self):
-        try:
-            from PIL import Image, ImageDraw, ImageFont
-        except ImportError:
-            messagebox.showerror(
-                "Экспорт в PNG",
-                "Для экспорта нужен пакет Pillow.\n"
-                "Установите его командой:\n\npip install pillow"
-            )
-            return
-
-        if not self.cards and not self.frames and not self.connections:
-            messagebox.showinfo("Экспорт в PNG", "Нечего экспортировать: борд пуст.")
-            return
-
-        filename = filedialog.asksaveasfilename(
-            defaultextension=".png",
-            filetypes=[("PNG изображения", "*.png"), ("Все файлы", "*.*")]
+        file_io.export_png(
+            canvas=self.canvas,
+            cards=self.cards,
+            frames=self.frames,
+            connections=self.connections,
+            theme=self.theme,
+            connection_anchor_fn=self._connection_anchors,
         )
-        if not filename:
-            return
-
-        items_bbox = None
-
-        def update_bbox(bbox, x1, y1, x2, y2):
-            if bbox is None:
-                return (x1, y1, x2, y2)
-            bx1, by1, bx2, by2 = bbox
-            return (min(bx1, x1), min(by1, y1), max(bx2, x2), max(by2, y2))
-
-        for frame in self.frames.values():
-            coords = self.canvas.coords(frame.rect_id)
-            if coords:
-                fx1, fy1, fx2, fy2 = coords
-                items_bbox = update_bbox(items_bbox, fx1, fy1, fx2, fy2)
-        for card in self.cards.values():
-            cx1 = card.x - card.width / 2
-            cy1 = card.y - card.height / 2
-            cx2 = card.x + card.width / 2
-            cy2 = card.y + card.height / 2
-            items_bbox = update_bbox(items_bbox, cx1, cy1, cx2, cy2)
-        for conn in self.connections:
-            coords = self.canvas.coords(conn.line_id)
-            if coords and len(coords) >= 4:
-                x1, y1, x2, y2 = coords[:4]
-                items_bbox = update_bbox(items_bbox, x1, y1, x2, y2)
-
-        if items_bbox is None:
-            messagebox.showinfo("Экспорт в PNG", "Не найдено объектов для экспорта.")
-            return
-
-        x1, y1, x2, y2 = items_bbox
-        padding = 20
-        width = int(x2 - x1 + 2 * padding)
-        height = int(y2 - y1 + 2 * padding)
-        if width <= 0 or height <= 0:
-            messagebox.showerror("Экспорт в PNG", "Некорректный размер изображения.")
-            return
-
-        from PIL import Image, ImageDraw, ImageFont
-        img = Image.new("RGB", (width, height), self.theme["bg"])
-        draw = ImageDraw.Draw(img)
-        font = ImageFont.load_default()
-
-        def map_xy(x, y):
-            return (x - x1 + padding, y - y1 + padding)
-
-        for frame in self.frames.values():
-            coords = self.canvas.coords(frame.rect_id)
-            if not coords:
-                continue
-            fx1, fy1, fx2, fy2 = coords
-            mx1, my1 = map_xy(fx1, fy1)
-            mx2, my2 = map_xy(fx2, fy2)
-            collapsed = frame.collapsed
-            fill = self.theme["frame_collapsed_bg"] if collapsed else self.theme["frame_bg"]
-            outline = self.theme["frame_outline"]
-            draw.rectangle([mx1, my1, mx2, my2], outline=outline, fill=fill)
-            title = frame.title
-            if title:
-                draw.text((mx1 + 8, my1 + 8), title, font=font, fill=self.theme["text"])
-
-        for conn in self.connections:
-            from_card = self.cards.get(conn.from_id)
-            to_card = self.cards.get(conn.to_id)
-            if not from_card or not to_card:
-                continue
-            sx, sy, tx, ty = self._connection_anchors(from_card, to_card)
-            msx, msy = map_xy(sx, sy)
-            mtx, mty = map_xy(tx, ty)
-            draw.line([msx, msy, mtx, mty], fill=self.theme["connection"], width=2)
-            if conn.label:
-                mx = (msx + mtx) / 2
-                my = (msy + mty) / 2
-                try:
-                    draw.text((mx, my), conn.label, font=font,
-                              fill=self.theme["connection_label"], anchor="mm")
-                except TypeError:
-                    draw.text((mx, my), conn.label, font=font,
-                              fill=self.theme["connection_label"])
-
-        for card in self.cards.values():
-            cx1 = card.x - card.width / 2
-            cy1 = card.y - card.height / 2
-            cx2 = card.x + card.width / 2
-            cy2 = card.y + card.height / 2
-            mx1, my1 = map_xy(cx1, cy1)
-            mx2, my2 = map_xy(cx2, cy2)
-            fill = card.color or self.theme["card_default"]
-            outline = self.theme["card_outline"]
-            draw.rectangle([mx1, my1, mx2, my2], fill=fill, outline=outline)
-            text = card.text
-            if text:
-                tx, ty = map_xy(card.x, card.y)
-                try:
-                    draw.multiline_text((tx, ty), text, font=font,
-                                        fill=self.theme["text"], align="center", anchor="mm")
-                except TypeError:
-                    draw.multiline_text((mx1 + 5, my1 + 5), text, font=font,
-                                        fill=self.theme["text"])
-
-        try:
-            img.save(filename, "PNG")
-        except Exception as e:
-            messagebox.showerror("Ошибка экспорта", str(e))
-            return
-
-        messagebox.showinfo("Экспорт в PNG", "Изображение сохранено:\n" + filename)
 
     # ---------- Мини-карта ----------
 

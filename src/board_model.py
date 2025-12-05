@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Any
 
+SCHEMA_VERSION = 1
+
 
 @dataclass
 class Card:
@@ -153,7 +155,7 @@ class BoardData:
         Добавляем schema_version и явно раскладываем поля.
         """
         return {
-            "schema_version": 1,
+            "schema_version": SCHEMA_VERSION,
             "cards": [c.to_primitive() for c in self.cards.values()],
             "connections": [conn.to_primitive() for conn in self.connections],
             "frames": [f.to_primitive() for f in self.frames.values()],

@@ -5,6 +5,7 @@ import os
 import copy
 from typing import Dict, List
 from .board_model import Card as ModelCard, Connection as ModelConnection, Frame as ModelFrame, BoardData
+from .config import THEMES, load_theme_name, save_theme_name
 
 class BoardApp:
     def __init__(self):
@@ -13,48 +14,8 @@ class BoardApp:
         self.root.geometry("1200x800")
 
         # Темы
-        self.themes = {
-            "light": {
-                "bg": "#ffffff",
-                "grid": "#f0f0f0",
-                "card_default": "#fff9b1",
-                "card_outline": "#444444",
-                "frame_bg": "#f5f5f5",
-                "frame_outline": "#888888",
-                "frame_collapsed_bg": "#e0e0ff",
-                "frame_collapsed_outline": "#aaaaaa",
-                "text": "#000000",
-                "connection": "#555555",
-                "connection_label": "#333333",
-                "minimap_bg": "#ffffff",
-                "minimap_card_outline": "#888888",
-                "minimap_frame_outline": "#aaaaaa",
-                "minimap_viewport": "#ff0000",
-            },
-            "dark": {
-                "bg": "#222222",
-                "grid": "#333333",
-                "card_default": "#444444",
-                "card_outline": "#dddddd",
-                "frame_bg": "#333333",
-                "frame_outline": "#aaaaaa",
-                "frame_collapsed_bg": "#444466",
-                "frame_collapsed_outline": "#cccccc",
-                "text": "#ffffff",
-                "connection": "#dddddd",
-                "connection_label": "#eeeeee",
-                "minimap_bg": "#222222",
-                "minimap_card_outline": "#aaaaaa",
-                "minimap_frame_outline": "#888888",
-                "minimap_viewport": "#ff6666",
-            }
-        }
-        self.theme_name = "light"
-        self.theme = self.themes[self.theme_name]
-
-        # Конфиг
-        self.config_filename = "_mini_miro_config.json"
-        self.load_config()
+        self.theme_name = load_theme_name(THEMES)
+        self.theme = THEMES[self.theme_name]
 
         # Данные борда
         self.cards = {}          # card_id -> dict с данными
@@ -136,27 +97,6 @@ class BoardApp:
 
         # Обработчик закрытия окна
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
-
-    # ---------- Конфиг (тема) ----------
-
-    def load_config(self):
-        if os.path.exists(self.config_filename):
-            try:
-                with open(self.config_filename, "r", encoding="utf-8") as f:
-                    cfg = json.load(f)
-                theme_name = cfg.get("theme")
-                if theme_name in self.themes:
-                    self.theme_name = theme_name
-                    self.theme = self.themes[self.theme_name]
-            except Exception:
-                pass
-
-    def save_config(self):
-        try:
-            with open(self.config_filename, "w", encoding="utf-8") as f:
-                json.dump({"theme": self.theme_name}, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
 
     def get_theme_button_text(self):
         return "Тёмная тема" if self.theme_name == "light" else "Светлая тема"
@@ -2346,8 +2286,8 @@ class BoardApp:
 
     def toggle_theme(self):
         self.theme_name = "dark" if self.theme_name == "light" else "light"
-        self.theme = self.themes[self.theme_name]
-        self.save_config()
+        self.theme = THEMES[self.theme_name]
+        save_theme_name(self.theme_name)
         state = self.get_board_data()
         self.set_board_from_data(state)
         self.canvas.config(bg=self.theme["bg"])

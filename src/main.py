@@ -1110,12 +1110,8 @@ class BoardApp:
         except ImportError:
             return None
         resample = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
-        copied = image.copy()
-        if fit_mode == "cover":
-            fitted = ImageOps.fit(copied, size, method=resample)
-        else:
-            fitted = ImageOps.contain(copied, size, method=resample)
-        return fitted.convert("RGBA")
+        contained = ImageOps.contain(image.copy(), size, method=resample)
+        return contained.convert("RGBA")
 
     def _prepare_icon_image(self, image, preview_scale: float = 1.0):
         base = max(image.width, image.height)

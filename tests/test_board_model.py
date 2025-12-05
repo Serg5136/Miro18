@@ -1,4 +1,4 @@
-from src.board_model import BoardData, Card, Connection, Frame
+from src.board_model import Attachment, BoardData, Card, Connection, Frame, SCHEMA_VERSION
 
 
 def test_card_serialization_roundtrip():
@@ -13,6 +13,7 @@ def test_card_serialization_roundtrip():
         "height": 50,
         "text": "Note",
         "color": "#abc123",
+        "attachments": [],
     }
 
     restored = Card.from_primitive(primitive)
@@ -62,7 +63,7 @@ def test_board_data_roundtrip_and_invalid_connections_skipped():
     )
 
     primitive = board.to_primitive()
-    assert primitive["schema_version"] == 1
+    assert primitive["schema_version"] == SCHEMA_VERSION
     assert primitive["cards"][0]["text"] == "A"
     assert primitive["connections"][0]["label"] == "edge"
 
@@ -77,3 +78,29 @@ def test_board_data_roundtrip_and_invalid_connections_skipped():
     assert len(restored.connections) == 1
     assert restored.connections[0].from_id == 1
     assert restored.frames[1].title == "Frame"
+
+
+def test_attachment_restores_base64():
+    attachment = Attachment(
+        id=1,
+        name="image.png",
+        source_type="file",
+        mime_type="image/png",
+        width=10,
+        height=10,
+        data_base64="YWJj",
+    )
+
+    card = Card(
+        id=1,
+        x=0,
+        y=0,
+        width=10,
+        height=10,
+        attachments=[attachment],
+    )
+
+    primitive = card.to_primitive()
+    assert primitive["attachments"][0]["data_base64"] == "YWJj"
+    restored = Card.from_primitive(primitive)
+    assert restored.attachments[0].data_base64 == "YWJj"

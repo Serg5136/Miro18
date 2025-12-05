@@ -6,11 +6,21 @@ from ..board_model import Card, Connection, Frame
 
 class CanvasView:
     def __init__(self, canvas: tk.Canvas, minimap: tk.Canvas | None, theme: Dict[str, str]):
-        self.text_padding = 10
-        self.text_margin = 4
+        self.text_padding_min = 8
+        self.text_padding_max = 16
+        self.text_margin_min = 2
+        self.text_margin_max = 6
         self.canvas = canvas
         self.minimap = minimap
         self.theme = theme
+
+    def _compute_spacing(self, card: Card) -> tuple[float, float]:
+        """Return adaptive (padding, margin) for the given card."""
+
+        padding = max(self.text_padding_min, min(card.width * 0.05, self.text_padding_max))
+        margin_base = padding * 0.4
+        margin = max(self.text_margin_min, min(margin_base, self.text_margin_max))
+        return padding, margin
 
     def set_theme(self, theme: Dict[str, str]) -> None:
         self.theme = theme
@@ -21,7 +31,7 @@ class CanvasView:
     def compute_card_layout(self, card: Card) -> Dict[str, float]:
         """Calculate positions for text and image areas inside the card."""
 
-        padding = self.text_padding
+        padding, margin = self._compute_spacing(card)
         y1 = card.y - card.height / 2
         text_width = max(card.width - 2 * padding, 20)
 
@@ -49,6 +59,8 @@ class CanvasView:
             "image_top": image_top,
             "image_height": image_height,
             "image_width": image_width,
+            "padding": padding,
+            "margin": margin,
         }
 
     def apply_card_layout(self, card: Card, layout: Dict[str, float]) -> None:
@@ -62,12 +74,13 @@ class CanvasView:
         if card.text_bg_id:
             bbox = self.canvas.bbox(card.text_id) if card.text_id else None
             if bbox:
+                margin = layout.get("margin", self.text_margin_min)
                 self.canvas.coords(
                     card.text_bg_id,
-                    bbox[0] - self.text_margin,
-                    bbox[1] - self.text_margin,
-                    bbox[2] + self.text_margin,
-                    bbox[3] + self.text_margin,
+                    bbox[0] - margin,
+                    bbox[1] - margin,
+                    bbox[2] + margin,
+                    bbox[3] + margin,
                 )
                 self.canvas.tag_lower(card.text_bg_id, card.text_id)
 
@@ -129,11 +142,12 @@ class CanvasView:
             card.x,
             layout["text_top"] + 14,
         )
+        margin = layout.get("margin", self.text_margin_min)
         text_bg_id = self.canvas.create_rectangle(
-            text_bbox[0] - self.text_margin,
-            text_bbox[1] - self.text_margin,
-            text_bbox[2] + self.text_margin,
-            text_bbox[3] + self.text_margin,
+            text_bbox[0] - margin,
+            text_bbox[1] - margin,
+            text_bbox[2] + margin,
+            text_bbox[3] + margin,
             fill=card.color,
             outline="",
             tags=("card_text_bg", f"card_{card.id}"),

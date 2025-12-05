@@ -405,6 +405,7 @@ class DragController:
             app.drag_data["resize_origin"] = None
             app.drag_data["dragged_cards"] = set()
             app.drag_data["moved"] = False
+            app.update_controls_state()
             return
 
         if mode == "resize_frame":

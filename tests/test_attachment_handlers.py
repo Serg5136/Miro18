@@ -18,6 +18,14 @@ def _make_app(tmp_root: Path):
     app.cards = {1: ModelCard(id=1, x=0, y=0, width=10, height=10, text="")}
     app.selected_cards = {1}
     app.selected_card_id = None
+    app.canvas_view = mock.Mock()
+    app.canvas_view.compute_card_layout.return_value = {
+        "text_top": 0,
+        "text_width": app.cards[1].width,
+        "image_top": 0,
+        "image_height": app.cards[1].height,
+        "image_width": app.cards[1].width,
+    }
     app.render_card_attachments = lambda _cid: None
     app.push_history = lambda: None
     return app

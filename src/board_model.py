@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, Iterable, List, Literal
 
 SCHEMA_VERSION = 4
 SUPPORTED_SCHEMA_VERSIONS = {1, 2, 3, SCHEMA_VERSION}
@@ -107,6 +107,24 @@ class Card:
             color=data.get("color", "#fff9b1"),
             attachments=[Attachment.from_primitive(a) for a in data.get("attachments", [])],
         )
+
+
+def bulk_update_card_colors(
+    cards: Dict[int, Card], card_ids: Iterable[int], color: str
+) -> List[int]:
+    """
+    Обновляет цвет сразу для нескольких карточек и возвращает список
+    идентификаторов, которые действительно изменились.
+    """
+
+    updated: List[int] = []
+    for cid in card_ids:
+        card = cards.get(cid)
+        if card is None or card.color == color:
+            continue
+        card.color = color
+        updated.append(cid)
+    return updated
 
 
 @dataclass

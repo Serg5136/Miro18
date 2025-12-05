@@ -144,6 +144,12 @@ class CanvasView:
         card.text_id = text_id
         card.text_bg_id = text_bg_id
 
+    def update_card_color(self, card: Card) -> None:
+        if card.rect_id:
+            self.canvas.itemconfig(card.rect_id, fill=card.color)
+        if card.text_bg_id:
+            self.canvas.itemconfig(card.text_bg_id, fill=card.color)
+
     def draw_frame(self, frame: Frame) -> None:
         rect_id = self.canvas.create_rectangle(
             frame.x1,

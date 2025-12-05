@@ -9,7 +9,7 @@ from typing import Dict, List
 from .autosave import AutoSaveService
 from .controllers import ConnectController, DragController, SelectionController
 from .board_model import Card as ModelCard, Connection as ModelConnection, Frame as ModelFrame, BoardData, Attachment
-from .config import THEMES, load_theme_name, save_theme_name
+from .config import THEMES, load_theme_settings, save_theme_settings
 from .history import History
 from .io import files as file_io
 from .ui import LayoutBuilder
@@ -23,8 +23,8 @@ class BoardApp:
         self.root.geometry("1200x800")
 
         # Темы
-        self.theme_name = load_theme_name(THEMES)
-        self.theme = THEMES[self.theme_name]
+        self.theme_name, self.text_colors = load_theme_settings(THEMES)
+        self.theme = self._build_theme()
 
         # Данные борда
         self.cards: Dict[int, ModelCard] = {}
@@ -122,8 +122,30 @@ class BoardApp:
         # Обработчик закрытия окна
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
+    def _build_theme(self):
+        base_theme = THEMES.get(self.theme_name, THEMES["light"])
+        text_color = self.text_colors.get(self.theme_name, base_theme.get("text", "#000000"))
+        return {**base_theme, "text": text_color}
+
+    def _apply_theme(self):
+        self.theme = self._build_theme()
+        if hasattr(self, "canvas_view"):
+            self.canvas_view.set_theme(self.theme)
+        if hasattr(self, "canvas"):
+            self.canvas.config(bg=self.theme["bg"])
+        if hasattr(self, "minimap") and self.minimap:
+            self.minimap.config(bg=self.theme["minimap_bg"])
+
     def get_theme_button_text(self):
         return "Тёмная тема" if self.theme_name == "light" else "Светлая тема"
+
+    def _redraw_with_current_theme(self):
+        state = self.get_board_data()
+        self.set_board_from_data(state)
+        if hasattr(self, "btn_theme"):
+            self.btn_theme.config(text=self.get_theme_button_text())
+        self.update_minimap()
+        self.update_connect_mode_indicator()
 
     def _build_ui(self):
         self.ui_builder.build(self)
@@ -1818,6 +1840,16 @@ class BoardApp:
             self.canvas.itemconfig(card.text_bg_id, fill=color)
         self.push_history()
 
+    def change_text_color(self):
+        initial = self.theme.get("text")
+        color = colorchooser.askcolor(initialcolor=initial, parent=self.root)[1]
+        if not color:
+            return
+        self.text_colors[self.theme_name] = color
+        self._apply_theme()
+        self._redraw_with_current_theme()
+        save_theme_settings(self.theme_name, self.text_colors)
+
     def edit_card_text_dialog(self):
         if self.selected_card_id is None or self.selected_card_id not in self.cards:
             messagebox.showwarning("Нет выбора", "Сначала выберите карточку.")
@@ -2280,17 +2312,9 @@ class BoardApp:
 
     def toggle_theme(self):
         self.theme_name = "dark" if self.theme_name == "light" else "light"
-        self.theme = THEMES[self.theme_name]
-        save_theme_name(self.theme_name)
-        self.canvas_view.set_theme(self.theme)
-        state = self.get_board_data()
-        self.set_board_from_data(state)
-        self.canvas.config(bg=self.theme["bg"])
-        if self.minimap:
-            self.minimap.config(bg=self.theme["minimap_bg"])
-        self.btn_theme.config(text=self.get_theme_button_text())
-        self.update_minimap()
-        self.update_connect_mode_indicator()
+        self._apply_theme()
+        self._redraw_with_current_theme()
+        save_theme_settings(self.theme_name, self.text_colors)
 
     # ---------- Закрытие ----------
 

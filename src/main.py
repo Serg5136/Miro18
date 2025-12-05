@@ -31,7 +31,7 @@ class BoardApp:
         self.root.geometry("1200x800")
 
         # Темы
-        self.theme_name, self.text_colors = load_theme_settings(THEMES)
+        self.theme_name, self.text_colors, self.show_grid = load_theme_settings(THEMES)
         self.theme = self._build_theme()
 
         # Данные борда
@@ -95,6 +95,7 @@ class BoardApp:
         # Сетка
         self.grid_size = 20
         self.snap_to_grid = True
+        self.var_show_grid = tk.BooleanVar(value=self.show_grid)
         # Привязка к сетке — переменные для UI
         self.var_snap_to_grid = tk.BooleanVar(value=self.snap_to_grid)
         self.var_grid_size = tk.IntVar(value=self.grid_size)
@@ -630,10 +631,12 @@ class BoardApp:
     # ---------- Сетка ----------
 
     def draw_grid(self):
-        self.canvas_view.draw_grid(self.grid_size)
+        self.canvas_view.draw_grid(self.grid_size, visible=self.show_grid)
 
     def render_board(self):
-        self.canvas_view.render_board(self.cards, self.frames, self.connections, self.grid_size)
+        self.canvas_view.render_board(
+            self.cards, self.frames, self.connections, self.grid_size, self.show_grid
+        )
         self._clear_all_attachment_previews()
         self.render_all_attachments()
 
@@ -2349,7 +2352,7 @@ class BoardApp:
         self.text_colors[self.theme_name] = color
         self._apply_theme()
         self._redraw_with_current_theme()
-        save_theme_settings(self.theme_name, self.text_colors)
+        save_theme_settings(self.theme_name, self.text_colors, self.show_grid)
 
     def edit_card_text_dialog(self):
         if self.selected_card_id is None or self.selected_card_id not in self.cards:
@@ -2590,6 +2593,12 @@ class BoardApp:
     
     # ---------- Настройки сетки (UI-обработчики) ----------
     
+    def on_toggle_show_grid(self):
+        """Отобразить или скрыть сетку и сохранить выбор пользователя."""
+        self.show_grid = bool(self.var_show_grid.get())
+        self.canvas_view.set_grid_visibility(self.show_grid)
+        save_theme_settings(self.theme_name, self.text_colors, self.show_grid)
+
     def on_toggle_snap_to_grid(self):
         """
         Включаем / выключаем привязку к сетке.
@@ -2834,7 +2843,7 @@ class BoardApp:
         self.theme_name = "dark" if self.theme_name == "light" else "light"
         self._apply_theme()
         self._redraw_with_current_theme()
-        save_theme_settings(self.theme_name, self.text_colors)
+        save_theme_settings(self.theme_name, self.text_colors, self.show_grid)
 
     # ---------- Закрытие ----------
 

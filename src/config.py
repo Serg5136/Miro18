@@ -44,11 +44,12 @@ THEMES: Dict[str, Dict[str, str]] = {
 
 def load_theme_settings(
     themes: Dict[str, Dict[str, str]] = THEMES, filename: str = CONFIG_FILENAME
-) -> tuple[str, Dict[str, str]]:
-    """Load theme name and per-theme text colors from config file."""
+) -> tuple[str, Dict[str, str], bool]:
+    """Load theme name, text colors and grid visibility flag from config file."""
 
     theme_name = "light"
     text_colors = {name: data.get("text", "#000000") for name, data in themes.items()}
+    show_grid = True
 
     if os.path.exists(filename):
         try:
@@ -63,21 +64,25 @@ def load_theme_settings(
                 for name, color in saved_colors.items():
                     if name in text_colors and isinstance(color, str):
                         text_colors[name] = color
+            saved_show_grid = cfg.get("show_grid")
+            if isinstance(saved_show_grid, bool):
+                show_grid = saved_show_grid
         except Exception:
             pass
-    return theme_name, text_colors
+    return theme_name, text_colors, show_grid
 
 
 def save_theme_settings(
     theme_name: str,
     text_colors: Dict[str, str],
+    show_grid: bool = True,
     filename: str = CONFIG_FILENAME,
 ) -> None:
     """Persist the selected theme name and text colors to config file."""
     try:
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(
-                {"theme": theme_name, "text_colors": text_colors},
+                {"theme": theme_name, "text_colors": text_colors, "show_grid": show_grid},
                 f,
                 ensure_ascii=False,
                 indent=2,

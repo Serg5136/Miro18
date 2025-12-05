@@ -110,11 +110,12 @@ class CanvasView:
                 )
                 self.canvas.tag_lower(card.text_bg_id, card.text_id)
 
-    def draw_grid(self, grid_size: int) -> None:
+    def draw_grid(self, grid_size: int, visible: bool = True) -> None:
         self.canvas.delete("grid")
         spacing = grid_size
         x_max = 4000
         y_max = 4000
+        state = "normal" if visible else "hidden"
         for x in range(0, x_max + 1, spacing):
             self.canvas.create_line(
                 x,
@@ -123,6 +124,7 @@ class CanvasView:
                 y_max,
                 fill=self.theme["grid"],
                 tags=("grid",),
+                state=state,
             )
         for y in range(0, y_max + 1, spacing):
             self.canvas.create_line(
@@ -132,8 +134,15 @@ class CanvasView:
                 y,
                 fill=self.theme["grid"],
                 tags=("grid",),
+                state=state,
             )
         self.canvas.tag_lower("grid")
+
+    def set_grid_visibility(self, visible: bool) -> None:
+        state = "normal" if visible else "hidden"
+        self.canvas.itemconfigure("grid", state=state)
+        if visible:
+            self.canvas.tag_lower("grid")
 
     def draw_card(self, card: Card) -> None:
         x1 = card.x - card.width / 2
@@ -328,9 +337,10 @@ class CanvasView:
         frames: Dict[int, Frame],
         connections: Iterable[Connection],
         grid_size: int,
+        show_grid: bool,
     ) -> None:
         self.canvas.delete("all")
-        self.draw_grid(grid_size)
+        self.draw_grid(grid_size, visible=show_grid)
 
         for frame in frames.values():
             self.draw_frame(frame)

@@ -19,12 +19,12 @@ class BoardApp:
         self.theme = THEMES[self.theme_name]
 
         # Данные борда
-        self.cards = {}          # card_id -> dict с данными
-        self.connections = []    # список {from, to, line_id, label, label_id}
+        self.cards: Dict[int, ModelCard] = {}
+        self.connections: List[ModelConnection] = []
         self.next_card_id = 1
 
         # Группы / рамки
-        self.frames = {}         # frame_id -> dict
+        self.frames: Dict[int, ModelFrame] = {}
         self.next_frame_id = 1
         self.selected_frame_id = None
 
@@ -246,10 +246,10 @@ class BoardApp:
     
         # Смещаем копию относительно исходной карточки
         offset = 30
-        new_x = card["x"] + offset
-        new_y = card["y"] + offset
+        new_x = card.x + offset
+        new_y = card.y + offset
     
-        new_card_id = self.create_card(new_x, new_y, card["text"], color=card["color"])
+        new_card_id = self.create_card(new_x, new_y, card.text, color=card.color)
         # Выделим новую карточку
         self.select_card(new_card_id, additive=False)
         self.push_history()
@@ -280,13 +280,13 @@ class BoardApp:
         new_title = simpledialog.askstring(
             "Название рамки",
             "Заголовок:",
-            initialvalue=frame.get("title", ""),
+            initialvalue=frame.title,
             parent=self.root,
         )
         if new_title is None:
             return
-        frame["title"] = new_title
-        self.canvas.itemconfig(frame["title_id"], text=new_title)
+        frame.title = new_title
+        self.canvas.itemconfig(frame.title_id, text=new_title)
         self.push_history()
     
     def _context_toggle_frame(self):
@@ -300,8 +300,8 @@ class BoardApp:
         if frame_id is None or frame_id not in self.frames:
             return
         frame = self.frames.pop(frame_id)
-        self.canvas.delete(frame["rect_id"])
-        self.canvas.delete(frame["title_id"])
+        self.canvas.delete(frame.rect_id)
+        self.canvas.delete(frame.title_id)
         if self.selected_frame_id == frame_id:
             self.selected_frame_id = None
         self.push_history()
@@ -310,7 +310,7 @@ class BoardApp:
         conn = self.context_connection
         if not conn:
             return
-        current_label = conn.get("label", "")
+        current_label = conn.label
         new_label = simpledialog.askstring(
             "Подпись связи",
             "Текст связи:",
@@ -319,20 +319,20 @@ class BoardApp:
         )
         if new_label is None:
             return
-        conn["label"] = new_label.strip()
-        if conn.get("label_id"):
-            if conn["label"]:
+        conn.label = new_label.strip()
+        if conn.label_id:
+            if conn.label:
                 self.canvas.itemconfig(
-                    conn["label_id"],
-                    text=conn["label"],
+                    conn.label_id,
+                    text=conn.label,
                     state="normal",
                     fill=self.theme["connection_label"],
                 )
             else:
-                self.canvas.delete(conn["label_id"])
-                conn["label_id"] = None
-        elif conn["label"]:
-            coords = self.canvas.coords(conn["line_id"])
+                self.canvas.delete(conn.label_id)
+                conn.label_id = None
+        elif conn.label:
+            coords = self.canvas.coords(conn.line_id)
             if len(coords) >= 4:
                 x1, y1, x2, y2 = coords[:4]
                 mx = (x1 + x2) / 2
@@ -342,12 +342,12 @@ class BoardApp:
             label_id = self.canvas.create_text(
                 mx,
                 my,
-                text=conn["label"],
+                text=conn.label,
                 font=("Arial", 9, "italic"),
                 fill=self.theme["connection_label"],
                 tags=("connection_label",),
             )
-            conn["label_id"] = label_id
+            conn.label_id = label_id
     
         self.push_history()
     
@@ -355,9 +355,9 @@ class BoardApp:
         conn = self.context_connection
         if not conn:
             return
-        self.canvas.delete(conn["line_id"])
-        if conn.get("label_id"):
-            self.canvas.delete(conn["label_id"])
+        self.canvas.delete(conn.line_id)
+        if conn.label_id:
+            self.canvas.delete(conn.label_id)
         try:
             self.connections.remove(conn)
         except ValueError:
@@ -441,35 +441,35 @@ class BoardApp:
         for card_id, card in self.cards.items():
             cards[card_id] = ModelCard(
                 id=card_id,
-                x=card["x"],
-                y=card["y"],
-                width=card["width"],
-                height=card["height"],
-                text=card["text"],
-                color=card["color"],
+                x=card.x,
+                y=card.y,
+                width=card.width,
+                height=card.height,
+                text=card.text,
+                color=card.color,
             )
 
         connections: List[ModelConnection] = []
         for conn in self.connections:
             connections.append(
                 ModelConnection(
-                    from_id=conn["from"],
-                    to_id=conn["to"],
-                    label=conn.get("label", ""),
+                    from_id=conn.from_id,
+                    to_id=conn.to_id,
+                    label=conn.label,
                 )
             )
 
         frames: Dict[int, ModelFrame] = {}
         for frame_id, frame in self.frames.items():
-            x1, y1, x2, y2 = self.canvas.coords(frame["rect_id"])
+            x1, y1, x2, y2 = self.canvas.coords(frame.rect_id)
             frames[frame_id] = ModelFrame(
                 id=frame_id,
                 x1=x1,
                 y1=y1,
                 x2=x2,
                 y2=y2,
-                title=frame.get("title", ""),
-                collapsed=frame.get("collapsed", False),
+                title=frame.title,
+                collapsed=frame.collapsed,
             )
 
         board = BoardData(cards=cards, connections=connections, frames=frames)
@@ -611,20 +611,20 @@ class BoardApp:
             card = self.cards.get(card_id)
             if not card:
                 continue
-            gx = round(card["x"] / self.grid_size) * self.grid_size
-            gy = round(card["y"] / self.grid_size) * self.grid_size
-            dx = gx - card["x"]
-            dy = gy - card["y"]
+            gx = round(card.x / self.grid_size) * self.grid_size
+            gy = round(card.y / self.grid_size) * self.grid_size
+            dx = gx - card.x
+            dy = gy - card.y
             if dx == 0 and dy == 0:
                 continue
-            card["x"] = gx
-            card["y"] = gy
-            x1 = gx - card["width"] / 2
-            y1 = gy - card["height"] / 2
-            x2 = gx + card["width"] / 2
-            y2 = gy + card["height"] / 2
-            self.canvas.coords(card["rect_id"], x1, y1, x2, y2)
-            self.canvas.coords(card["text_id"], gx, gy)
+            card.x = gx
+            card.y = gy
+            x1 = gx - card.width / 2
+            y1 = gy - card.height / 2
+            x2 = gx + card.width / 2
+            y2 = gy + card.height / 2
+            self.canvas.coords(card.rect_id, x1, y1, x2, y2)
+            self.canvas.coords(card.text_id, gx, gy)
             self.update_card_handles_positions(card_id)
             self.update_connections_for_card(card_id)
 
@@ -650,7 +650,7 @@ class BoardApp:
         # Двойной клик по связи — редактируем подпись
         conn = self.get_connection_from_item(item_id)
         if conn is not None:
-            current_label = conn.get("label", "")
+            current_label = conn.label
             new_label = simpledialog.askstring(
                 "Подпись связи",
                 "Текст связи:",
@@ -659,20 +659,20 @@ class BoardApp:
             )
             if new_label is None:
                 return
-            conn["label"] = new_label.strip()
-            if conn.get("label_id"):
-                if conn["label"]:
+            conn.label = new_label.strip()
+            if conn.label_id:
+                if conn.label:
                     self.canvas.itemconfig(
-                        conn["label_id"],
-                        text=conn["label"],
+                        conn.label_id,
+                        text=conn.label,
                         state="normal",
                         fill=self.theme["connection_label"],
                     )
                 else:
-                    self.canvas.delete(conn["label_id"])
-                    conn["label_id"] = None
-            elif conn["label"]:
-                coords = self.canvas.coords(conn["line_id"])
+                    self.canvas.delete(conn.label_id)
+                    conn.label_id = None
+            elif conn.label:
+                coords = self.canvas.coords(conn.line_id)
                 if len(coords) >= 4:
                     x1, y1, x2, y2 = coords[:4]
                     mx = (x1 + x2) / 2
@@ -682,12 +682,12 @@ class BoardApp:
                 label_id = self.canvas.create_text(
                     mx,
                     my,
-                    text=conn["label"],
+                    text=conn.label,
                     font=("Arial", 9, "italic"),
                     fill=self.theme["connection_label"],
                     tags=("connection_label",),
                 )
-                conn["label_id"] = label_id
+                conn.label_id = label_id
             self.push_history()
             return
     
@@ -742,19 +742,17 @@ class BoardApp:
             tags=("card_text", f"card_{card_id}")
         )
 
-        self.cards[card_id] = {
-            "id": card_id,
-            "x": x,
-            "y": y,
-            "width": width,
-            "height": height,
-            "text": text,
-            "color": color,
-            "rect_id": rect_id,
-            "text_id": text_id,
-            "resize_handle_id": None,
-            "connect_handle_id": None,
-        }
+        self.cards[card_id] = ModelCard(
+            id=card_id,
+            x=x,
+            y=y,
+            width=width,
+            height=height,
+            text=text,
+            color=color,
+            rect_id=rect_id,
+            text_id=text_id,
+        )
         return card_id
 
     def get_card_id_from_item(self, item_ids):
@@ -821,13 +819,17 @@ class BoardApp:
         self.canvas.tag_lower(rect_id)
         self.canvas.tag_lower("grid")
 
-        self.frames[frame_id] = {
-            "id": frame_id,
-            "rect_id": rect_id,
-            "title_id": title_id,
-            "title": title,
-            "collapsed": collapsed,
-        }
+        self.frames[frame_id] = ModelFrame(
+            id=frame_id,
+            x1=x1,
+            y1=y1,
+            x2=x2,
+            y2=y2,
+            title=title,
+            collapsed=collapsed,
+            rect_id=rect_id,
+            title_id=title_id,
+        )
 
         if collapsed:
             self.apply_frame_collapse_state(frame_id)
@@ -864,7 +866,7 @@ class BoardApp:
         frame = self.frames.get(frame_id)
         if not frame:
             return
-        self.canvas.itemconfig(frame["rect_id"], width=width)
+        self.canvas.itemconfig(frame.rect_id, width=width)
 
     def toggle_selected_frame_collapse(self):
         frame_id = self.selected_frame_id
@@ -872,10 +874,10 @@ class BoardApp:
             messagebox.showwarning("Нет выбора", "Сначала выберите рамку.")
             return
         frame = self.frames[frame_id]
-        frame["collapsed"] = not frame.get("collapsed", False)
+        frame.collapsed = not frame.collapsed
 
-        rect_id = frame["rect_id"]
-        if frame["collapsed"]:
+        rect_id = frame.rect_id
+        if frame.collapsed:
             self.canvas.itemconfig(
                 rect_id,
                 dash=(3, 3),
@@ -897,29 +899,29 @@ class BoardApp:
         frame = self.frames.get(frame_id)
         if not frame:
             return
-        collapsed = frame.get("collapsed", False)
+        collapsed = frame.collapsed
         state = "hidden" if collapsed else "normal"
 
-        x1, y1, x2, y2 = self.canvas.coords(frame["rect_id"])
+        x1, y1, x2, y2 = self.canvas.coords(frame.rect_id)
         cards_in_frame = [
             cid for cid, card in self.cards.items()
-            if x1 <= card["x"] <= x2 and y1 <= card["y"] <= y2
+            if x1 <= card.x <= x2 and y1 <= card.y <= y2
         ]
 
         for cid in cards_in_frame:
             card = self.cards[cid]
-            self.canvas.itemconfig(card["rect_id"], state=state)
-            self.canvas.itemconfig(card["text_id"], state=state)
-            if card["resize_handle_id"]:
-                self.canvas.itemconfig(card["resize_handle_id"], state=state)
-            if card["connect_handle_id"]:
-                self.canvas.itemconfig(card["connect_handle_id"], state=state)
+            self.canvas.itemconfig(card.rect_id, state=state)
+            self.canvas.itemconfig(card.text_id, state=state)
+            if card.resize_handle_id:
+                self.canvas.itemconfig(card.resize_handle_id, state=state)
+            if card.connect_handle_id:
+                self.canvas.itemconfig(card.connect_handle_id, state=state)
 
         for conn in self.connections:
-            if conn["from"] in cards_in_frame or conn["to"] in cards_in_frame:
-                self.canvas.itemconfig(conn["line_id"], state=state)
-                if conn.get("label_id"):
-                    self.canvas.itemconfig(conn["label_id"], state=state)
+            if conn.from_id in cards_in_frame or conn.to_id in cards_in_frame:
+                self.canvas.itemconfig(conn.line_id, state=state)
+                if conn.label_id:
+                    self.canvas.itemconfig(conn.label_id, state=state)
 
     # ---------- Хэндлы карточек (resize / connect) ----------
 
@@ -927,17 +929,17 @@ class BoardApp:
         card = self.cards.get(card_id)
         if not card:
             return
-        x = card["x"]
-        y = card["y"]
-        w = card["width"]
-        h = card["height"]
+        x = card.x
+        y = card.y
+        w = card.width
+        h = card.height
         x1 = x - w / 2
         y1 = y - h / 2
         x2 = x + w / 2
         y2 = y + h / 2
 
         # Resize handle (square внизу справа)
-        if not card["resize_handle_id"]:
+        if not card.resize_handle_id:
             size = 10
             rx1 = x2 - size
             ry1 = y2 - size
@@ -949,10 +951,10 @@ class BoardApp:
                 outline="",
                 tags=("resize_handle", f"card_{card_id}")
             )
-            card["resize_handle_id"] = rid
+            card.resize_handle_id = rid
 
         # Connect handle (circle справа по центру)
-        if not card["connect_handle_id"]:
+        if not card.connect_handle_id:
             r = 6
             cx = x2
             cy = y
@@ -962,48 +964,48 @@ class BoardApp:
                 outline="",
                 tags=("connect_handle", f"card_{card_id}")
             )
-            card["connect_handle_id"] = cid
+            card.connect_handle_id = cid
 
-        self.canvas.tag_raise(card["resize_handle_id"])
-        self.canvas.tag_raise(card["connect_handle_id"])
+        self.canvas.tag_raise(card.resize_handle_id)
+        self.canvas.tag_raise(card.connect_handle_id)
 
     def hide_card_handles(self, card_id):
         card = self.cards.get(card_id)
         if not card:
             return
-        if card["resize_handle_id"]:
-            self.canvas.delete(card["resize_handle_id"])
-            card["resize_handle_id"] = None
-        if card["connect_handle_id"]:
-            self.canvas.delete(card["connect_handle_id"])
-            card["connect_handle_id"] = None
+        if card.resize_handle_id:
+            self.canvas.delete(card.resize_handle_id)
+            card.resize_handle_id = None
+        if card.connect_handle_id:
+            self.canvas.delete(card.connect_handle_id)
+            card.connect_handle_id = None
 
     def update_card_handles_positions(self, card_id):
         card = self.cards.get(card_id)
         if not card:
             return
-        x = card["x"]
-        y = card["y"]
-        w = card["width"]
-        h = card["height"]
+        x = card.x
+        y = card.y
+        w = card.width
+        h = card.height
         x1 = x - w / 2
         y1 = y - h / 2
         x2 = x + w / 2
         y2 = y + h / 2
 
-        if card["resize_handle_id"]:
+        if card.resize_handle_id:
             size = 10
             rx1 = x2 - size
             ry1 = y2 - size
             rx2 = x2
             ry2 = y2
-            self.canvas.coords(card["resize_handle_id"], rx1, ry1, rx2, ry2)
+            self.canvas.coords(card.resize_handle_id, rx1, ry1, rx2, ry2)
 
-        if card["connect_handle_id"]:
+        if card.connect_handle_id:
             r = 6
             cx = x2
             cy = y
-            self.canvas.coords(card["connect_handle_id"],
+            self.canvas.coords(card.connect_handle_id,
                                cx - r, cy - r, cx + r, cy + r)
 
     # ---------- Выделение карточек ----------
@@ -1037,7 +1039,7 @@ class BoardApp:
         card = self.cards.get(card_id)
         if not card:
             return
-        self.canvas.itemconfig(card["rect_id"], width=width)
+        self.canvas.itemconfig(card.rect_id, width=width)
 
     # ---------- Мышь: выбор/перетаскивание/resize/connect-drag ----------
 
@@ -1054,8 +1056,8 @@ class BoardApp:
             if card_id is not None:
                 self.select_card(card_id, additive=False)
                 card = self.cards[card_id]
-                x1 = card["x"] - card["width"] / 2
-                y1 = card["y"] - card["height"] / 2
+                x1 = card.x - card.width / 2
+                y1 = card.y - card.height / 2
                 self.drag_data["dragging"] = True
                 self.drag_data["mode"] = "resize_card"
                 self.drag_data["resize_card_id"] = card_id
@@ -1069,8 +1071,8 @@ class BoardApp:
             if card_id is not None:
                 self.select_card(card_id, additive=False)
                 card = self.cards[card_id]
-                sx = card["x"] + card["width"] / 2
-                sy = card["y"]
+                sx = card.x + card.width / 2
+                sy = card.y
                 self.drag_data["dragging"] = True
                 self.drag_data["mode"] = "connect_drag"
                 self.drag_data["connect_from_card"] = card_id
@@ -1142,10 +1144,10 @@ class BoardApp:
             self.drag_data["frame_id"] = frame_id
             self.drag_data["last_x"] = cx
             self.drag_data["last_y"] = cy
-            x1, y1, x2, y2 = self.canvas.coords(self.frames[frame_id]["rect_id"])
+            x1, y1, x2, y2 = self.canvas.coords(self.frames[frame_id].rect_id)
             self.drag_data["dragged_cards"] = {
                 cid for cid, card in self.cards.items()
-                if x1 <= card["x"] <= x2 and y1 <= card["y"] <= y2
+                if x1 <= card.x <= x2 and y1 <= card.y <= y2
             }
         else:
             self.select_card(None)
@@ -1176,16 +1178,16 @@ class BoardApp:
                 new_y2 = max(oy1 + min_h, cy)
                 w = new_x2 - ox1
                 h = new_y2 - oy1
-                card["width"] = w
-                card["height"] = h
-                card["x"] = ox1 + w / 2
-                card["y"] = oy1 + h / 2
+                card.width = w
+                card.height = h
+                card.x = ox1 + w / 2
+                card.y = oy1 + h / 2
                 x1 = ox1
                 y1 = oy1
                 x2 = new_x2
                 y2 = new_y2
-                self.canvas.coords(card["rect_id"], x1, y1, x2, y2)
-                self.canvas.coords(card["text_id"], card["x"], card["y"])
+                self.canvas.coords(card.rect_id, x1, y1, x2, y2)
+                self.canvas.coords(card.text_id, card.x, card.y)
                 self.update_card_handles_positions(card_id)
                 self.update_connections_for_card(card_id)
                 self.drag_data["moved"] = True
@@ -1212,14 +1214,14 @@ class BoardApp:
                     card = self.cards.get(card_id)
                     if not card:
                         continue
-                    card["x"] += dx
-                    card["y"] += dy
-                    x1 = card["x"] - card["width"] / 2
-                    y1 = card["y"] - card["height"] / 2
-                    x2 = card["x"] + card["width"] / 2
-                    y2 = card["y"] + card["height"] / 2
-                    self.canvas.coords(card["rect_id"], x1, y1, x2, y2)
-                    self.canvas.coords(card["text_id"], card["x"], card["y"])
+                    card.x += dx
+                    card.y += dy
+                    x1 = card.x - card.width / 2
+                    y1 = card.y - card.height / 2
+                    x2 = card.x + card.width / 2
+                    y2 = card.y + card.height / 2
+                    self.canvas.coords(card.rect_id, x1, y1, x2, y2)
+                    self.canvas.coords(card.text_id, card.x, card.y)
                     self.update_card_handles_positions(card_id)
                     self.update_connections_for_card(card_id)
 
@@ -1227,21 +1229,21 @@ class BoardApp:
                 frame_id = self.drag_data["frame_id"]
                 frame = self.frames.get(frame_id)
                 if frame:
-                    self.canvas.move(frame["rect_id"], dx, dy)
-                    self.canvas.move(frame["title_id"], dx, dy)
+                    self.canvas.move(frame.rect_id, dx, dy)
+                    self.canvas.move(frame.title_id, dx, dy)
 
                 for card_id in self.drag_data["dragged_cards"]:
                     card = self.cards.get(card_id)
                     if not card:
                         continue
-                    card["x"] += dx
-                    card["y"] += dy
-                    x1 = card["x"] - card["width"] / 2
-                    y1 = card["y"] - card["height"] / 2
-                    x2 = card["x"] + card["width"] / 2
-                    y2 = card["y"] + card["height"] / 2
-                    self.canvas.coords(card["rect_id"], x1, y1, x2, y2)
-                    self.canvas.coords(card["text_id"], card["x"], card["y"])
+                    card.x += dx
+                    card.y += dy
+                    x1 = card.x - card.width / 2
+                    y1 = card.y - card.height / 2
+                    x2 = card.x + card.width / 2
+                    y2 = card.y + card.height / 2
+                    self.canvas.coords(card.rect_id, x1, y1, x2, y2)
+                    self.canvas.coords(card.text_id, card.x, card.y)
                     self.update_card_handles_positions(card_id)
                     self.update_connections_for_card(card_id)
 
@@ -1310,7 +1312,7 @@ class BoardApp:
 
             self.select_card(None)
             for card_id, card in self.cards.items():
-                if left <= card["x"] <= right and top <= card["y"] <= bottom:
+                if left <= card.x <= right and top <= card.y <= bottom:
                     self.select_card(card_id, additive=True)
 
             self.canvas.delete(self.selection_rect_id)
@@ -1348,12 +1350,12 @@ class BoardApp:
         self.zoom_factor = new_zoom
 
         for card in self.cards.values():
-            x1, y1, x2, y2 = self.canvas.coords(card["rect_id"])
-            card["x"] = (x1 + x2) / 2
-            card["y"] = (y1 + y2) / 2
-            card["width"] = x2 - x1
-            card["height"] = y2 - y1
-            self.update_card_handles_positions(card["id"])
+            x1, y1, x2, y2 = self.canvas.coords(card.rect_id)
+            card.x = (x1 + x2) / 2
+            card.y = (y1 + y2) / 2
+            card.width = x2 - x1
+            card.height = y2 - y1
+            self.update_card_handles_positions(card.id)
 
         bbox = self.canvas.bbox("all")
         if bbox:
@@ -1367,29 +1369,29 @@ class BoardApp:
         if not item_id:
             return None
         for conn in self.connections:
-            if conn["line_id"] == item_id or conn.get("label_id") == item_id:
+            if conn.line_id == item_id or conn.label_id == item_id:
                 return conn
         return None
 
     def _connection_anchors(self, from_card, to_card):
-        x1, y1 = from_card["x"], from_card["y"]
-        x2, y2 = to_card["x"], to_card["y"]
+        x1, y1 = from_card.x, from_card.y
+        x2, y2 = to_card.x, to_card.y
         dx = x2 - x1
         dy = y2 - y1
 
         if abs(dx) > abs(dy):
-            sx = x1 + (from_card["width"] / 2) * (1 if dx > 0 else -1)
+            sx = x1 + (from_card.width / 2) * (1 if dx > 0 else -1)
             sy = y1
         else:
             sx = x1
-            sy = y1 + (from_card["height"] / 2) * (1 if dy > 0 else -1)
+            sy = y1 + (from_card.height / 2) * (1 if dy > 0 else -1)
 
         if abs(dx) > abs(dy):
-            tx = x2 - (to_card["width"] / 2) * (1 if dx > 0 else -1)
+            tx = x2 - (to_card.width / 2) * (1 if dx > 0 else -1)
             ty = y2
         else:
             tx = x2
-            ty = y2 - (to_card["height"] / 2) * (1 if dy > 0 else -1)
+            ty = y2 - (to_card.height / 2) * (1 if dy > 0 else -1)
 
         return sx, sy, tx, ty
 
@@ -1419,26 +1421,28 @@ class BoardApp:
                 fill=self.theme["connection_label"],
                 tags=("connection_label",)
             )
-        self.connections.append({
-            "from": from_id,
-            "to": to_id,
-            "line_id": line_id,
-            "label": label,
-            "label_id": label_id,
-        })
+        self.connections.append(
+            ModelConnection(
+                from_id=from_id,
+                to_id=to_id,
+                label=label,
+                line_id=line_id,
+                label_id=label_id,
+            )
+        )
 
     def update_connections_for_card(self, card_id):
         for conn in self.connections:
-            if conn["from"] == card_id or conn["to"] == card_id:
-                from_card = self.cards.get(conn["from"])
-                to_card = self.cards.get(conn["to"])
+            if conn.from_id == card_id or conn.to_id == card_id:
+                from_card = self.cards.get(conn.from_id)
+                to_card = self.cards.get(conn.to_id)
                 if from_card and to_card:
                     sx, sy, tx, ty = self._connection_anchors(from_card, to_card)
-                    self.canvas.coords(conn["line_id"], sx, sy, tx, ty)
-                    if conn.get("label_id"):
+                    self.canvas.coords(conn.line_id, sx, sy, tx, ty)
+                    if conn.label_id:
                         mx = (sx + tx) / 2
                         my = (sy + ty) / 2
-                        self.canvas.coords(conn["label_id"], mx, my)
+                        self.canvas.coords(conn.label_id, mx, my)
 
     def toggle_connect_mode(self):
         if not self.connect_mode:
@@ -1459,12 +1463,12 @@ class BoardApp:
             messagebox.showwarning("Нет выбора", "Сначала выберите карточку.")
             return
         card = self.cards[self.selected_card_id]
-        initial = card["color"]
+        initial = card.color
         color = colorchooser.askcolor(initialcolor=initial, parent=self.root)[1]
         if not color:
             return
-        card["color"] = color
-        self.canvas.itemconfig(card["rect_id"], fill=color)
+        card.color = color
+        self.canvas.itemconfig(card.rect_id, fill=color)
         self.push_history()
 
     def edit_card_text_dialog(self):
@@ -1478,12 +1482,12 @@ class BoardApp:
         card = self.cards[card_id]
         new_text = simpledialog.askstring("Редактировать текст",
                                           "Текст карточки:",
-                                          initialvalue=card["text"],
+                                          initialvalue=card.text,
                                           parent=self.root)
         if new_text is None:
             return
-        card["text"] = new_text
-        self.canvas.itemconfig(card["text_id"], text=new_text)
+        card.text = new_text
+        self.canvas.itemconfig(card.text_id, text=new_text)
 
     # ---------- Inline-редактирование карточек и выравнивание ----------
     
@@ -1504,12 +1508,12 @@ class BoardApp:
     
         # Берём bbox текста карточки
         try:
-            x1, y1, x2, y2 = self.canvas.bbox(card["text_id"])
+            x1, y1, x2, y2 = self.canvas.bbox(card.text_id)
         except Exception:
-            x = card["x"]
-            y = card["y"]
-            w = card["width"]
-            h = card["height"]
+            x = card.x
+            y = card.y
+            w = card.width
+            h = card.height
             x1 = x - w / 2 + 4
             y1 = y - h / 2 + 4
             x2 = x + w / 2 - 4
@@ -1528,7 +1532,7 @@ class BoardApp:
             borderwidth=1,
             relief="solid",
         )
-        self.inline_editor.insert("1.0", card["text"])
+        self.inline_editor.insert("1.0", card.text)
         self.inline_editor.focus_set()
     
         self.inline_editor_window_id = self.canvas.create_window(
@@ -1587,9 +1591,9 @@ class BoardApp:
             return
     
         new_text = editor_text.strip()
-        card["text"] = new_text
-        self.canvas.itemconfig(card["text_id"], text=new_text)
-        self.canvas.itemconfig(card["text_id"], width=card["width"] - 10)
+        card.text = new_text
+        self.canvas.itemconfig(card.text_id, text=new_text)
+        self.canvas.itemconfig(card.text_id, width=card.width - 10)
     
         self.push_history()
     
@@ -1609,19 +1613,19 @@ class BoardApp:
             return
     
         left_min = min(
-            self.cards[cid]["x"] - self.cards[cid]["width"] / 2 for cid in cards
+            self.cards[cid].x - self.cards[cid].width / 2 for cid in cards
         )
     
         for cid in cards:
             card = self.cards[cid]
-            new_x = left_min + card["width"] / 2
-            card["x"] = new_x
-            x1 = card["x"] - card["width"] / 2
-            y1 = card["y"] - card["height"] / 2
-            x2 = card["x"] + card["width"] / 2
-            y2 = card["y"] + card["height"] / 2
-            self.canvas.coords(card["rect_id"], x1, y1, x2, y2)
-            self.canvas.coords(card["text_id"], card["x"], card["y"])
+            new_x = left_min + card.width / 2
+            card.x = new_x
+            x1 = card.x - card.width / 2
+            y1 = card.y - card.height / 2
+            x2 = card.x + card.width / 2
+            y2 = card.y + card.height / 2
+            self.canvas.coords(card.rect_id, x1, y1, x2, y2)
+            self.canvas.coords(card.text_id, card.x, card.y)
             self.update_card_handles_positions(cid)
             self.update_connections_for_card(cid)
     
@@ -1633,19 +1637,19 @@ class BoardApp:
             return
     
         top_min = min(
-            self.cards[cid]["y"] - self.cards[cid]["height"] / 2 for cid in cards
+            self.cards[cid].y - self.cards[cid].height / 2 for cid in cards
         )
     
         for cid in cards:
             card = self.cards[cid]
-            new_y = top_min + card["height"] / 2
-            card["y"] = new_y
-            x1 = card["x"] - card["width"] / 2
-            y1 = card["y"] - card["height"] / 2
-            x2 = card["x"] + card["width"] / 2
-            y2 = card["y"] + card["height"] / 2
-            self.canvas.coords(card["rect_id"], x1, y1, x2, y2)
-            self.canvas.coords(card["text_id"], card["x"], card["y"])
+            new_y = top_min + card.height / 2
+            card.y = new_y
+            x1 = card.x - card.width / 2
+            y1 = card.y - card.height / 2
+            x2 = card.x + card.width / 2
+            y2 = card.y + card.height / 2
+            self.canvas.coords(card.rect_id, x1, y1, x2, y2)
+            self.canvas.coords(card.text_id, card.x, card.y)
             self.update_card_handles_positions(cid)
             self.update_connections_for_card(cid)
     
@@ -1657,18 +1661,18 @@ class BoardApp:
             return
     
         ref = self.cards[cards[0]]
-        ref_w = ref["width"]
+        ref_w = ref.width
     
         for cid in cards:
             card = self.cards[cid]
-            card["width"] = ref_w
-            x1 = card["x"] - ref_w / 2
-            y1 = card["y"] - card["height"] / 2
-            x2 = card["x"] + ref_w / 2
-            y2 = card["y"] + card["height"] / 2
-            self.canvas.coords(card["rect_id"], x1, y1, x2, y2)
-            self.canvas.itemconfig(card["text_id"], width=ref_w - 10)
-            self.canvas.coords(card["text_id"], card["x"], card["y"])
+            card.width = ref_w
+            x1 = card.x - ref_w / 2
+            y1 = card.y - card.height / 2
+            x2 = card.x + ref_w / 2
+            y2 = card.y + card.height / 2
+            self.canvas.coords(card.rect_id, x1, y1, x2, y2)
+            self.canvas.itemconfig(card.text_id, width=ref_w - 10)
+            self.canvas.coords(card.text_id, card.x, card.y)
             self.update_card_handles_positions(cid)
             self.update_connections_for_card(cid)
     
@@ -1680,17 +1684,17 @@ class BoardApp:
             return
     
         ref = self.cards[cards[0]]
-        ref_h = ref["height"]
+        ref_h = ref.height
     
         for cid in cards:
             card = self.cards[cid]
-            card["height"] = ref_h
-            x1 = card["x"] - card["width"] / 2
-            y1 = card["y"] - ref_h / 2
-            x2 = card["x"] + card["width"] / 2
-            y2 = card["y"] + ref_h / 2
-            self.canvas.coords(card["rect_id"], x1, y1, x2, y2)
-            self.canvas.coords(card["text_id"], card["x"], card["y"])
+            card.height = ref_h
+            x1 = card.x - card.width / 2
+            y1 = card.y - ref_h / 2
+            x2 = card.x + card.width / 2
+            y2 = card.y + ref_h / 2
+            self.canvas.coords(card.rect_id, x1, y1, x2, y2)
+            self.canvas.coords(card.text_id, card.x, card.y)
             self.update_card_handles_positions(cid)
             self.update_connections_for_card(cid)
     
@@ -1732,10 +1736,10 @@ class BoardApp:
 
         new_connections = []
         for conn in self.connections:
-            if conn["from"] in to_delete or conn["to"] in to_delete:
-                self.canvas.delete(conn["line_id"])
-                if conn.get("label_id"):
-                    self.canvas.delete(conn["label_id"])
+            if conn.from_id in to_delete or conn.to_id in to_delete:
+                self.canvas.delete(conn.line_id)
+                if conn.label_id:
+                    self.canvas.delete(conn.label_id)
             else:
                 new_connections.append(conn)
         self.connections = new_connections
@@ -1744,12 +1748,12 @@ class BoardApp:
             card = self.cards.get(card_id)
             if not card:
                 continue
-            if card["resize_handle_id"]:
-                self.canvas.delete(card["resize_handle_id"])
-            if card["connect_handle_id"]:
-                self.canvas.delete(card["connect_handle_id"])
-            self.canvas.delete(card["rect_id"])
-            self.canvas.delete(card["text_id"])
+            if card.resize_handle_id:
+                self.canvas.delete(card.resize_handle_id)
+            if card.connect_handle_id:
+                self.canvas.delete(card.connect_handle_id)
+            self.canvas.delete(card.rect_id)
+            self.canvas.delete(card.text_id)
             del self.cards[card_id]
 
         self.selected_cards.clear()
@@ -1769,22 +1773,22 @@ class BoardApp:
             c = self.cards[cid]
             cards_data.append({
                 "id": cid,
-                "x": c["x"],
-                "y": c["y"],
-                "width": c["width"],
-                "height": c["height"],
-                "text": c["text"],
-                "color": c["color"],
+                "x": c.x,
+                "y": c.y,
+                "width": c.width,
+                "height": c.height,
+                "text": c.text,
+                "color": c.color,
             })
-            sx += c["x"]
-            sy += c["y"]
+            sx += c.x
+            sy += c.y
         center = (sx / len(ids), sy / len(ids))
         for conn in self.connections:
-            if conn["from"] in ids and conn["to"] in ids:
+            if conn.from_id in ids and conn.to_id in ids:
                 connections_data.append({
-                    "from": conn["from"],
-                    "to": conn["to"],
-                    "label": conn.get("label", ""),
+                    "from": conn.from_id,
+                    "to": conn.to_id,
+                    "label": conn.label,
                 })
         self.clipboard = {
             "cards": cards_data,
@@ -1910,18 +1914,18 @@ class BoardApp:
             return (min(bx1, x1), min(by1, y1), max(bx2, x2), max(by2, y2))
 
         for frame in self.frames.values():
-            coords = self.canvas.coords(frame["rect_id"])
+            coords = self.canvas.coords(frame.rect_id)
             if coords:
                 fx1, fy1, fx2, fy2 = coords
                 items_bbox = update_bbox(items_bbox, fx1, fy1, fx2, fy2)
         for card in self.cards.values():
-            cx1 = card["x"] - card["width"] / 2
-            cy1 = card["y"] - card["height"] / 2
-            cx2 = card["x"] + card["width"] / 2
-            cy2 = card["y"] + card["height"] / 2
+            cx1 = card.x - card.width / 2
+            cy1 = card.y - card.height / 2
+            cx2 = card.x + card.width / 2
+            cy2 = card.y + card.height / 2
             items_bbox = update_bbox(items_bbox, cx1, cy1, cx2, cy2)
         for conn in self.connections:
-            coords = self.canvas.coords(conn["line_id"])
+            coords = self.canvas.coords(conn.line_id)
             if coords and len(coords) >= 4:
                 x1, y1, x2, y2 = coords[:4]
                 items_bbox = update_bbox(items_bbox, x1, y1, x2, y2)
@@ -1947,52 +1951,52 @@ class BoardApp:
             return (x - x1 + padding, y - y1 + padding)
 
         for frame in self.frames.values():
-            coords = self.canvas.coords(frame["rect_id"])
+            coords = self.canvas.coords(frame.rect_id)
             if not coords:
                 continue
             fx1, fy1, fx2, fy2 = coords
             mx1, my1 = map_xy(fx1, fy1)
             mx2, my2 = map_xy(fx2, fy2)
-            collapsed = frame.get("collapsed", False)
+            collapsed = frame.collapsed
             fill = self.theme["frame_collapsed_bg"] if collapsed else self.theme["frame_bg"]
             outline = self.theme["frame_outline"]
             draw.rectangle([mx1, my1, mx2, my2], outline=outline, fill=fill)
-            title = frame.get("title", "")
+            title = frame.title
             if title:
                 draw.text((mx1 + 8, my1 + 8), title, font=font, fill=self.theme["text"])
 
         for conn in self.connections:
-            from_card = self.cards.get(conn["from"])
-            to_card = self.cards.get(conn["to"])
+            from_card = self.cards.get(conn.from_id)
+            to_card = self.cards.get(conn.to_id)
             if not from_card or not to_card:
                 continue
             sx, sy, tx, ty = self._connection_anchors(from_card, to_card)
             msx, msy = map_xy(sx, sy)
             mtx, mty = map_xy(tx, ty)
             draw.line([msx, msy, mtx, mty], fill=self.theme["connection"], width=2)
-            if conn.get("label"):
+            if conn.label:
                 mx = (msx + mtx) / 2
                 my = (msy + mty) / 2
                 try:
-                    draw.text((mx, my), conn["label"], font=font,
+                    draw.text((mx, my), conn.label, font=font,
                               fill=self.theme["connection_label"], anchor="mm")
                 except TypeError:
-                    draw.text((mx, my), conn["label"], font=font,
+                    draw.text((mx, my), conn.label, font=font,
                               fill=self.theme["connection_label"])
 
         for card in self.cards.values():
-            cx1 = card["x"] - card["width"] / 2
-            cy1 = card["y"] - card["height"] / 2
-            cx2 = card["x"] + card["width"] / 2
-            cy2 = card["y"] + card["height"] / 2
+            cx1 = card.x - card.width / 2
+            cy1 = card.y - card.height / 2
+            cx2 = card.x + card.width / 2
+            cy2 = card.y + card.height / 2
             mx1, my1 = map_xy(cx1, cy1)
             mx2, my2 = map_xy(cx2, cy2)
-            fill = card.get("color") or self.theme["card_default"]
+            fill = card.color or self.theme["card_default"]
             outline = self.theme["card_outline"]
             draw.rectangle([mx1, my1, mx2, my2], fill=fill, outline=outline)
-            text = card.get("text", "")
+            text = card.text
             if text:
-                tx, ty = map_xy(card["x"], card["y"])
+                tx, ty = map_xy(card.x, card.y)
                 try:
                     draw.multiline_text((tx, ty), text, font=font,
                                         fill=self.theme["text"], align="center", anchor="mm")
@@ -2034,15 +2038,15 @@ class BoardApp:
             return mx, my
 
         for card in self.cards.values():
-            cx, cy = card["x"], card["y"]
-            w, h = card["width"], card["height"]
+            cx, cy = card.x, card.y
+            w, h = card.width, card.height
             mx1, my1 = map_point(cx - w / 2, cy - h / 2)
             mx2, my2 = map_point(cx + w / 2, cy + h / 2)
             self.minimap.create_rectangle(mx1, my1, mx2, my2,
                                           outline=self.theme["minimap_card_outline"], fill="")
 
         for frame in self.frames.values():
-            fx1, fy1, fx2, fy2 = self.canvas.coords(frame["rect_id"])
+            fx1, fy1, fx2, fy2 = self.canvas.coords(frame.rect_id)
             mx1, my1 = map_point(fx1, fy1)
             mx2, my2 = map_point(fx2, fy2)
             self.minimap.create_rectangle(mx1, my1, mx2, my2,

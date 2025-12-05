@@ -29,6 +29,7 @@ class SelectionController:
 
         if not additive:
             self.clear_card_selection()
+            app.clear_connection_selection()
 
         if card_id is not None and card_id in app.cards:
             if app.selected_attachment and app.selected_attachment[0] != card_id:
@@ -43,11 +44,13 @@ class SelectionController:
         app.update_controls_state()
 
     def select_frame(self, frame_id: int | None) -> None:
+        app = self.app
         self.clear_card_selection()
-        self.app.hide_all_frame_handles()
-        self.app.clear_attachment_selection()
-        self.app.selected_frame_id = frame_id
-        if frame_id is not None and frame_id in self.app.frames:
-            self.app.show_frame_handles(frame_id)
-        self.app.render_selection()
-        self.app.update_controls_state()
+        app.hide_all_frame_handles()
+        app.clear_connection_selection()
+        app.clear_attachment_selection()
+        app.selected_frame_id = frame_id
+        if frame_id is not None and frame_id in app.frames:
+            app.show_frame_handles(frame_id)
+        app.render_selection()
+        app.update_controls_state()

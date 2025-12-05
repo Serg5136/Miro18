@@ -365,6 +365,8 @@ class CanvasView:
         frames: Dict[int, Frame],
         selected_cards: Iterable[int],
         selected_frame_id: int | None,
+        connections: Iterable[Connection] | None = None,
+        selected_connection: Connection | None = None,
     ) -> None:
         selected_cards_set = set(selected_cards)
         for cid, card in cards.items():
@@ -375,6 +377,19 @@ class CanvasView:
             if frame.rect_id:
                 width = 3 if fid == selected_frame_id else 2
                 self.canvas.itemconfig(frame.rect_id, width=width)
+
+        if connections is None:
+            return
+
+        for conn in connections:
+            if conn.line_id:
+                width = 3 if conn is selected_connection else 2
+                self.canvas.itemconfig(conn.line_id, width=width, fill=self.theme["connection"])
+            if conn.label_id:
+                label_color = self.theme["connection_label"]
+                if conn is selected_connection:
+                    label_color = self.theme.get("connection_label_selected", label_color)
+                self.canvas.itemconfig(conn.label_id, fill=label_color)
 
     def render_minimap(self, cards: Iterable[Card], frames: Iterable[Frame]) -> None:
         if not self.minimap:

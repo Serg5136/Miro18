@@ -39,6 +39,11 @@ HOTKEYS: List[Hotkey] = [
     Hotkey("copy", ("<Control-c>", "<Control-C>"), "on_copy"),
     Hotkey("paste", ("<Control-v>", "<Control-V>", "<<Paste>>"), "on_paste"),
     Hotkey("duplicate", ("<Control-d>", "<Control-D>"), "on_duplicate"),
+    Hotkey(
+        "toggle_connection_direction",
+        ("<Control-Shift-d>", "<Control-Shift-D>"),
+        "toggle_selected_connection_direction",
+    ),
 ]
 
 

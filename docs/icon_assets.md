@@ -10,6 +10,12 @@
 - Оптимизация под 40×40: все основные элементы вписаны в viewBox 40×40, ключевые детали занимают центральные 28–30 px, чтобы
   оставаться читабельными при отображении кнопок 40×40.
 
+## Правила использования
+- Размер клика: 40×40 px. Не масштабируйте сами SVG, меняйте только цвет через `currentColor`.
+- Подсказки: у каждого интерактивного элемента должна быть подсказка с действием и горячей клавишей (если есть), а также `ariaLabel`/`ariaDescribedby` для доступности.
+- Компонент: используйте `IconWithTooltip`, чтобы автоматически подключить наведение, фокус и активацию клавишами Enter/Space.
+- Добавление новых файлов: сохраняйте стиль (outline, `stroke-width="2"`, скругление линий) и viewBox 40×40.
+
 ## Имена файлов
 Файлы лежат в `assets/icons` и названы по действию:
 
@@ -31,6 +37,25 @@
 - `icon-redo.svg`
 - `icon-text-color.svg`
 - `icon-apply-size.svg`
+
+## Пример кода с `IconWithTooltip`
+
+```python
+from tkinter import PhotoImage
+from src.ui.icon_with_tooltip import IconWithTooltip
+
+icon_connect = PhotoImage(file="assets/icons/icon-connect.svg")
+btn_connect = IconWithTooltip(
+    parent,
+    icon=icon_connect,
+    tooltip="Режим соединения (C)",
+    ariaLabel="Создать связь",
+    ariaDescribedby="Создать связь между карточками",
+    size=40,
+    command=start_connection_mode,
+)
+btn_connect.pack()
+```
 
 ## Использование тем
 - Светлая тема: используйте тёмный цвет stroke (например, `#2b2b2b`).

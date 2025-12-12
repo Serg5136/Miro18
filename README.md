@@ -153,6 +153,56 @@
 
 ---
 
+## Дизайн-гайд: иконки и подсказки
+
+- **Размеры:** кнопки и иконки рассчитаны на площадь клика 40×40 px. SVG-ресурсы оптически вписаны в 28–30 px и не требуют дополнительного масштабирования.
+- **Ассеты:** все файлы лежат в `assets/icons` и имеют монохромный outline-стиль (stroke `2px`, `currentColor`). Используйте их без трансформаций, меняя только родительский цвет.
+- **Подсказки:** каждый интерактивный контрол с иконкой должен иметь краткую подсказку (action + hotkey, если есть) и доступные `ariaLabel`/`ariaDescribedby`. Для единообразия используйте компонент `IconWithTooltip`.
+- **Обновление набора:** при добавлении новой кнопки выбирайте существующий ассет или добавляйте SVG того же стиля (viewBox 40×40, outline, скруглённые окончания линий).
+
+### Пример использования `IconWithTooltip`
+
+```python
+from tkinter import PhotoImage
+from src.ui.icon_with_tooltip import IconWithTooltip
+
+icon = PhotoImage(file="assets/icons/icon-save.svg")
+btn_save = IconWithTooltip(
+    root,
+    icon=icon,
+    tooltip="Сохранить доску (Ctrl+S)",
+    ariaLabel="Сохранить",
+    size=40,
+    command=save_board,
+)
+btn_save.pack()
+```
+
+### Доступные ассеты
+
+Набор SVG-иконок для действий (каталог `assets/icons`):
+
+- `icon-apply-size.svg` — выровнять размеры;
+- `icon-attach-image.svg` — прикрепить изображение;
+- `icon-card-add.svg` — добавить карточку;
+- `icon-card-color.svg` — изменить цвет карточки;
+- `icon-connect.svg` — создать связь;
+- `icon-delete.svg` — удалить;
+- `icon-export-png.svg` — экспорт PNG;
+- `icon-frame-add.svg` — добавить рамку;
+- `icon-frame-collapse.svg` — свернуть/развернуть рамку;
+- `icon-grid-show.svg` — показать/скрыть сетку;
+- `icon-grid-snap.svg` — привязка к сетке;
+- `icon-load.svg` — загрузить доску;
+- `icon-redo.svg` — Redo;
+- `icon-save.svg` — сохранить доску;
+- `icon-text-color.svg` — изменить цвет текста;
+- `icon-text-edit.svg` — редактировать текст;
+- `icon-theme-toggle.svg` — переключить тему;
+- `icon-undo.svg` — Undo.
+
+---
+
 ## Горячие клавиши
 
 - `Ctrl+Z` / `Ctrl+Y` — отмена / повтор.

@@ -1,4 +1,5 @@
 import tkinter as tk
+from types import SimpleNamespace
 
 
 class Tooltip:
@@ -51,10 +52,25 @@ class Tooltip:
             y = event.y_root + 10
             self._window.wm_geometry(f"+{x}+{y}")
 
+    def _show_on_focus(self, _event: tk.Event | None = None) -> None:
+        """Display tooltip when widget receives focus."""
+
+        dummy_event = SimpleNamespace(
+            x_root=self.widget.winfo_rootx() + self.widget.winfo_width() // 2,
+            y_root=self.widget.winfo_rooty() + self.widget.winfo_height(),
+        )
+        self._show(dummy_event)
+
     def bind_to_widget(self) -> None:
         self.widget.bind("<Enter>", self._schedule, add="+")
         self.widget.bind("<Leave>", self._hide, add="+")
         self.widget.bind("<Motion>", self._move, add="+")
+
+    def bind_focus(self) -> None:
+        """Show tooltip on focus and hide on blur to aid keyboard users."""
+
+        self.widget.bind("<FocusIn>", self._show_on_focus, add="+")
+        self.widget.bind("<FocusOut>", self._hide, add="+")
 
     def bind_to_tag(self, tag: str) -> None:
         if not hasattr(self.widget, "tag_bind"):

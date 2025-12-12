@@ -1,6 +1,7 @@
 import tkinter as tk
 from typing import Optional
 
+from .icon_with_tooltip import IconWithTooltip
 from .sidebar import SidebarFactory
 from .tooltips import add_tooltip
 from ..input import EventBinder
@@ -8,48 +9,54 @@ from ..input import EventBinder
 
 class ToolbarFactory:
     def create(self, app) -> tk.Frame:
-        toolbar = tk.Frame(app.root, bg="#e0e0e0", height=32)
+        toolbar = tk.Frame(app.root, bg="#e0e0e0", height=56)
         toolbar.grid(row=0, column=0, columnspan=2, sticky="new")
+        toolbar.grid_propagate(False)
 
-        btn_undo_toolbar = tk.Button(
+        btn_undo_toolbar = IconWithTooltip(
             toolbar,
-            text="⟲ Отменить",
+            icon=app.icon_loader.get("icon-undo"),
+            tooltip="Отменить последнее действие",
+            ariaLabel="Отменить",
             command=app.on_undo,
+            bg="#e0e0e0",
         )
-        btn_undo_toolbar.pack(side="left", padx=(8, 2), pady=4)
-        app.btn_undo_toolbar = btn_undo_toolbar
-        add_tooltip(btn_undo_toolbar, "Отменить последнее действие")
+        btn_undo_toolbar.pack(side="left", padx=(8, 2), pady=8)
+        app.btn_undo_toolbar = btn_undo_toolbar.button
 
-        btn_redo_toolbar = tk.Button(
+        btn_redo_toolbar = IconWithTooltip(
             toolbar,
-            text="⟳ Повторить",
+            icon=app.icon_loader.get("icon-redo"),
+            tooltip="Повторить отменённое действие",
+            ariaLabel="Повторить",
             command=app.on_redo,
+            bg="#e0e0e0",
         )
-        btn_redo_toolbar.pack(side="left", padx=2, pady=4)
-        app.btn_redo_toolbar = btn_redo_toolbar
-        add_tooltip(btn_redo_toolbar, "Повторить отменённое действие")
+        btn_redo_toolbar.pack(side="left", padx=2, pady=8)
+        app.btn_redo_toolbar = btn_redo_toolbar.button
 
-        btn_attach_image = tk.Button(
+        btn_attach_image = IconWithTooltip(
             toolbar,
-            text="📎 Прикрепить к карточке",
+            icon=app.icon_loader.get("icon-attach-image"),
+            tooltip="Прикрепить файл-изображение к выделенной карточке без создания новой",
+            ariaLabel="Прикрепить к карточке",
             command=app.attach_image_from_file,
+            bg="#e0e0e0",
         )
-        btn_attach_image.pack(side="left", padx=(10, 2), pady=4)
-        add_tooltip(
-            btn_attach_image,
-            "Прикрепить файл-изображение к выделенной карточке без создания новой",
-        )
+        btn_attach_image.pack(side="left", padx=(10, 2), pady=8)
 
-        btn_text_color = tk.Button(
+        btn_text_color = IconWithTooltip(
             toolbar,
-            text="🎨 Цвет текста",
+            icon=app.icon_loader.get("icon-text-color"),
+            tooltip="Изменить цвет текста карточек для текущей темы",
+            ariaLabel="Цвет текста",
             command=app.change_text_color,
+            bg="#e0e0e0",
         )
-        btn_text_color.pack(side="left", padx=2, pady=4)
-        add_tooltip(btn_text_color, "Изменить цвет текста карточек для текущей темы")
+        btn_text_color.pack(side="left", padx=2, pady=8)
 
         size_frame = tk.Frame(toolbar, bg="#e0e0e0")
-        size_frame.pack(side="left", padx=(12, 2), pady=4)
+        size_frame.pack(side="left", padx=(12, 2), pady=8)
 
         tk.Label(size_frame, text="Ширина:", bg="#e0e0e0").grid(row=0, column=0, padx=(0, 4))
         spn_width = tk.Spinbox(
@@ -73,13 +80,15 @@ class ToolbarFactory:
         spn_height.grid(row=0, column=3, padx=(0, 8))
         add_tooltip(spn_height, "Задайте высоту карточки в пикселях")
 
-        btn_apply_size = tk.Button(
+        btn_apply_size = IconWithTooltip(
             size_frame,
-            text="Применить",
+            icon=app.icon_loader.get("icon-apply-size"),
+            tooltip="Применить указанные ширину и высоту к выбранным карточкам",
+            ariaLabel="Применить размеры",
             command=app.apply_card_size_from_controls,
+            bg="#e0e0e0",
         )
-        btn_apply_size.grid(row=0, column=4)
-        add_tooltip(btn_apply_size, "Применить указанные ширину и высоту к выбранным карточкам")
+        btn_apply_size.grid(row=0, column=4, padx=(4, 0))
         return toolbar
 
 

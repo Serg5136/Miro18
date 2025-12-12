@@ -1,5 +1,6 @@
 import tkinter as tk
 
+from .icon_with_tooltip import IconWithTooltip
 from .tooltips import add_canvas_tooltip, add_tooltip
 
 
@@ -35,83 +36,144 @@ class SidebarFactory:
         tk.Label(manage_section, text="Управление", bg="#f0f0f0",
                  font=("Arial", 12, "bold")).pack(pady=(5, 5))
 
-        btn_add = tk.Button(manage_section, text="Добавить карточку",
-                            command=app.add_card_dialog)
-        btn_add.pack(fill="x", padx=10, pady=5)
-        app.btn_add_card = btn_add
-        add_tooltip(btn_add, "Создать новую карточку на холсте")
+        btn_add = IconWithTooltip(
+            manage_section,
+            icon=app.icon_loader.get("icon-card-add"),
+            tooltip="Создать новую карточку на холсте",
+            ariaLabel="Добавить карточку",
+            command=app.add_card_dialog,
+            bg=manage_section["bg"],
+        )
+        btn_add.pack(anchor="w", padx=10, pady=5)
+        app.btn_add_card = btn_add.button
 
-        btn_color = tk.Button(manage_section, text="Изменить цвет",
-                              command=app.change_color)
-        btn_color.pack(fill="x", padx=10, pady=5)
-        app.btn_change_color = btn_color
-        add_tooltip(btn_color, "Изменить цвет выделенной карточки")
+        btn_color = IconWithTooltip(
+            manage_section,
+            icon=app.icon_loader.get("icon-card-color"),
+            tooltip="Изменить цвет выделенной карточки",
+            ariaLabel="Изменить цвет",
+            command=app.change_color,
+            bg=manage_section["bg"],
+        )
+        btn_color.pack(anchor="w", padx=10, pady=5)
+        app.btn_change_color = btn_color.button
 
-        btn_connect = tk.Button(manage_section, text="Соединить карточки (режим)",
-                                command=app.toggle_connect_mode)
-        btn_connect.pack(fill="x", padx=10, pady=5)
-        app.btn_connect_mode = btn_connect
-        app.btn_connect_mode_default_bg = btn_connect.cget("bg")
-        app.btn_connect_mode_default_text = btn_connect.cget("text")
-        add_tooltip(btn_connect, "Включить режим соединения карточек")
+        btn_connect = IconWithTooltip(
+            manage_section,
+            icon=app.icon_loader.get("icon-connect"),
+            tooltip="Включить режим соединения карточек",
+            ariaLabel="Соединить карточки",
+            command=app.toggle_connect_mode,
+            bg=manage_section["bg"],
+        )
+        btn_connect.pack(anchor="w", padx=10, pady=5)
+        app.btn_connect_mode = btn_connect.button
+        app.btn_connect_mode_default_bg = btn_connect.button.cget("bg")
 
-        btn_edit = tk.Button(manage_section, text="Редактировать текст",
-                             command=app.edit_card_text_dialog)
-        btn_edit.pack(fill="x", padx=10, pady=5)
-        app.btn_edit_text = btn_edit
-        add_tooltip(btn_edit, "Изменить текст выделенной карточки")
+        btn_edit = IconWithTooltip(
+            manage_section,
+            icon=app.icon_loader.get("icon-text-edit"),
+            tooltip="Изменить текст выделенной карточки",
+            ariaLabel="Редактировать текст",
+            command=app.edit_card_text_dialog,
+            bg=manage_section["bg"],
+        )
+        btn_edit.pack(anchor="w", padx=10, pady=5)
+        app.btn_edit_text = btn_edit.button
 
-        btn_delete = tk.Button(manage_section, text="Удалить карточку(и) (Del)",
-                               command=app.delete_selected_cards)
-        btn_delete.pack(fill="x", padx=10, pady=5)
-        app.btn_delete_cards = btn_delete
-        add_tooltip(btn_delete, "Удалить выбранные карточки")
+        btn_delete = IconWithTooltip(
+            manage_section,
+            icon=app.icon_loader.get("icon-delete"),
+            tooltip="Удалить выбранные карточки",
+            ariaLabel="Удалить карточку",
+            command=app.delete_selected_cards,
+            bg=manage_section["bg"],
+        )
+        btn_delete.pack(anchor="w", padx=10, pady=5)
+        app.btn_delete_cards = btn_delete.button
 
         tk.Label(other_sections, text="Группы / рамки", bg="#f0f0f0",
                  font=("Arial", 12, "bold")).pack(pady=(20, 5))
 
-        btn_add_frame = tk.Button(other_sections, text="Добавить рамку",
-                                  command=app.add_frame_dialog)
-        btn_add_frame.pack(fill="x", padx=10, pady=5)
-        app.btn_add_frame = btn_add_frame
-        add_tooltip(btn_add_frame, "Создать новую рамку для группировки")
+        btn_add_frame = IconWithTooltip(
+            other_sections,
+            icon=app.icon_loader.get("icon-frame-add"),
+            tooltip="Создать новую рамку для группировки",
+            ariaLabel="Добавить рамку",
+            command=app.add_frame_dialog,
+            bg=other_sections["bg"],
+        )
+        btn_add_frame.pack(anchor="w", padx=10, pady=5)
+        app.btn_add_frame = btn_add_frame.button
 
-        btn_toggle_frame = tk.Button(other_sections, text="Свернуть/развернуть рамку",
-                                     command=app.toggle_selected_frame_collapse)
-        btn_toggle_frame.pack(fill="x", padx=10, pady=5)
-        app.btn_toggle_frame = btn_toggle_frame
-        add_tooltip(btn_toggle_frame, "Свернуть или развернуть выделенную рамку")
+        btn_toggle_frame = IconWithTooltip(
+            other_sections,
+            icon=app.icon_loader.get("icon-frame-collapse"),
+            tooltip="Свернуть или развернуть выделенную рамку",
+            ariaLabel="Свернуть или развернуть рамку",
+            command=app.toggle_selected_frame_collapse,
+            bg=other_sections["bg"],
+        )
+        btn_toggle_frame.pack(anchor="w", padx=10, pady=5)
+        app.btn_toggle_frame = btn_toggle_frame.button
 
         tk.Label(other_sections, text="Файл", bg="#f0f0f0",
                  font=("Arial", 12, "bold")).pack(pady=(20, 5))
 
-        btn_save = tk.Button(other_sections, text="Сохранить...",
-                             command=app.save_board)
-        btn_save.pack(fill="x", padx=10, pady=5)
-        add_tooltip(btn_save, "Сохранить текущую доску в файл")
+        btn_save = IconWithTooltip(
+            other_sections,
+            icon=app.icon_loader.get("icon-save"),
+            tooltip="Сохранить текущую доску в файл",
+            ariaLabel="Сохранить",
+            command=app.save_board,
+            bg=other_sections["bg"],
+        )
+        btn_save.pack(anchor="w", padx=10, pady=5)
 
-        btn_load = tk.Button(other_sections, text="Загрузить...",
-                             command=app.load_board)
-        btn_load.pack(fill="x", padx=10, pady=5)
-        add_tooltip(btn_load, "Загрузить доску из файла")
+        btn_load = IconWithTooltip(
+            other_sections,
+            icon=app.icon_loader.get("icon-load"),
+            tooltip="Загрузить доску из файла",
+            ariaLabel="Загрузить",
+            command=app.load_board,
+            bg=other_sections["bg"],
+        )
+        btn_load.pack(anchor="w", padx=10, pady=5)
 
-        btn_export = tk.Button(other_sections, text="Экспорт в PNG",
-                               command=app.export_png)
-        btn_export.pack(fill="x", padx=10, pady=5)
-        add_tooltip(btn_export, "Сохранить доску как изображение PNG")
+        btn_export = IconWithTooltip(
+            other_sections,
+            icon=app.icon_loader.get("icon-export-png"),
+            tooltip="Сохранить доску как изображение PNG",
+            ariaLabel="Экспорт в PNG",
+            command=app.export_png,
+            bg=other_sections["bg"],
+        )
+        btn_export.pack(anchor="w", padx=10, pady=5)
 
-        btn_attach_image = tk.Button(other_sections, text="Прикрепить изображение",
-                                     command=app.attach_image_from_file)
-        btn_attach_image.pack(fill="x", padx=10, pady=5)
-        add_tooltip(btn_attach_image, "Добавить изображение к выделенной карточке")
+        btn_attach_image = IconWithTooltip(
+            other_sections,
+            icon=app.icon_loader.get("icon-attach-image"),
+            tooltip="Добавить изображение к выделенной карточке",
+            ariaLabel="Прикрепить изображение",
+            command=app.attach_image_from_file,
+            bg=other_sections["bg"],
+        )
+        btn_attach_image.pack(anchor="w", padx=10, pady=5)
 
         tk.Label(other_sections, text="Вид", bg="#f0f0f0",
                  font=("Arial", 12, "bold")).pack(pady=(15, 5))
 
-        app.btn_theme = tk.Button(other_sections, text=app.get_theme_button_text(),
-                                   command=app.toggle_theme)
-        app.btn_theme.pack(fill="x", padx=10, pady=5)
-        add_tooltip(app.btn_theme, "Переключить светлую/тёмную тему")
+        theme_button = IconWithTooltip(
+            other_sections,
+            icon=app.icon_loader.get("icon-theme-toggle"),
+            tooltip=app.get_theme_button_text(),
+            ariaLabel="Переключить тему",
+            command=app.toggle_theme,
+            bg=other_sections["bg"],
+        )
+        theme_button.pack(anchor="w", padx=10, pady=5)
+        app.btn_theme = theme_button.button
+        app.btn_theme_tooltip = theme_button._tooltip
 
         tk.Label(other_sections, text="Сетка", bg="#f0f0f0",
                  font=("Arial", 12, "bold")).pack(pady=(20, 5))

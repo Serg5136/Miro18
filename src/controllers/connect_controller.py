@@ -21,13 +21,11 @@ class ConnectController:
                 relief="sunken",
                 bg=active_bg,
                 fg=app.theme.get("text", "black"),
-                text=f"{app.btn_connect_mode_default_text} ✓",
             )
         else:
             app.btn_connect_mode.config(
                 relief="raised",
                 bg=app.btn_connect_mode_default_bg,
-                text=app.btn_connect_mode_default_text,
             )
 
     def set_connect_mode(self, enabled: bool) -> None:

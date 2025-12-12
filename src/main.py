@@ -20,7 +20,7 @@ from .board_model import (
 from .config import THEMES, load_theme_settings, save_theme_settings
 from .history import History
 from .io import files as file_io
-from .ui import LayoutBuilder
+from .ui import IconLoader, LayoutBuilder
 from .view.canvas_view import CanvasView
 
 class BoardApp:
@@ -29,6 +29,8 @@ class BoardApp:
         self.root = tk.Tk()
         self.root.title("Mini Miro Board (Python)")
         self.root.geometry("1200x800")
+
+        self.icon_loader = IconLoader()
 
         # Темы
         self.theme_name, self.text_colors, self.show_grid = load_theme_settings(THEMES)
@@ -170,8 +172,8 @@ class BoardApp:
     def _redraw_with_current_theme(self):
         state = self.get_board_data()
         self.set_board_from_data(state)
-        if hasattr(self, "btn_theme"):
-            self.btn_theme.config(text=self.get_theme_button_text())
+        if hasattr(self, "btn_theme_tooltip"):
+            self.btn_theme_tooltip.text = self.get_theme_button_text()
         self.update_minimap()
         self.update_connect_mode_indicator()
 

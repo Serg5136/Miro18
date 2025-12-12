@@ -1,10 +1,14 @@
 import tkinter as tk
 
 from .icon_with_tooltip import IconWithTooltip
+from .localization import DEFAULT_LOCALE, get_string
 from .tooltips import add_canvas_tooltip, add_tooltip
 
 
 class SidebarFactory:
+    def __init__(self, locale: str = DEFAULT_LOCALE) -> None:
+        self.locale = locale
+
     def create(self, app) -> tk.Frame:
         sidebar = tk.Frame(app.root, width=260, bg="#f0f0f0")
         sidebar.grid(row=1, column=1, sticky="ns")
@@ -13,7 +17,9 @@ class SidebarFactory:
         controls_frame = tk.Frame(sidebar, bg="#f0f0f0")
 
         collapse_button = tk.Button(
-            sidebar, text="Свернуть управление ▴"
+            sidebar,
+            text=get_string("sidebar.toggle.collapse", self.locale),
+            takefocus=True,
         )
         collapse_button.pack(fill="x", padx=10, pady=(10, 5))
         controls_frame.pack(fill="both", expand=True)
@@ -26,21 +32,29 @@ class SidebarFactory:
         def toggle_sidebar():
             if manage_section.winfo_ismapped():
                 manage_section.pack_forget()
-                collapse_button.config(text="Показать управление ▾")
+                collapse_button.config(
+                    text=get_string("sidebar.toggle.expand", self.locale)
+                )
             else:
                 manage_section.pack(fill="both", expand=False, before=other_sections)
-                collapse_button.config(text="Свернуть управление ▴")
+                collapse_button.config(
+                    text=get_string("sidebar.toggle.collapse", self.locale)
+                )
 
         collapse_button.configure(command=toggle_sidebar)
 
-        tk.Label(manage_section, text="Управление", bg="#f0f0f0",
-                 font=("Arial", 12, "bold")).pack(pady=(5, 5))
+        tk.Label(
+            manage_section,
+            text=get_string("sidebar.section.manage", self.locale),
+            bg="#f0f0f0",
+            font=("Arial", 12, "bold"),
+        ).pack(pady=(5, 5))
 
         btn_add = IconWithTooltip(
             manage_section,
             icon=app.icon_loader.get("icon-card-add"),
-            tooltip="Создать новую карточку на холсте",
-            ariaLabel="Добавить карточку",
+            tooltip=get_string("sidebar.add.tooltip", self.locale),
+            ariaLabel=get_string("sidebar.add.aria", self.locale),
             command=app.add_card_dialog,
             bg=manage_section["bg"],
         )
@@ -50,8 +64,8 @@ class SidebarFactory:
         btn_color = IconWithTooltip(
             manage_section,
             icon=app.icon_loader.get("icon-card-color"),
-            tooltip="Изменить цвет выделенной карточки",
-            ariaLabel="Изменить цвет",
+            tooltip=get_string("sidebar.color.tooltip", self.locale),
+            ariaLabel=get_string("sidebar.color.aria", self.locale),
             command=app.change_color,
             bg=manage_section["bg"],
         )
@@ -61,8 +75,8 @@ class SidebarFactory:
         btn_connect = IconWithTooltip(
             manage_section,
             icon=app.icon_loader.get("icon-connect"),
-            tooltip="Включить режим соединения карточек",
-            ariaLabel="Соединить карточки",
+            tooltip=get_string("sidebar.connect.tooltip", self.locale),
+            ariaLabel=get_string("sidebar.connect.aria", self.locale),
             command=app.toggle_connect_mode,
             bg=manage_section["bg"],
         )
@@ -73,8 +87,8 @@ class SidebarFactory:
         btn_edit = IconWithTooltip(
             manage_section,
             icon=app.icon_loader.get("icon-text-edit"),
-            tooltip="Изменить текст выделенной карточки",
-            ariaLabel="Редактировать текст",
+            tooltip=get_string("sidebar.edit.tooltip", self.locale),
+            ariaLabel=get_string("sidebar.edit.aria", self.locale),
             command=app.edit_card_text_dialog,
             bg=manage_section["bg"],
         )
@@ -84,22 +98,26 @@ class SidebarFactory:
         btn_delete = IconWithTooltip(
             manage_section,
             icon=app.icon_loader.get("icon-delete"),
-            tooltip="Удалить выбранные карточки",
-            ariaLabel="Удалить карточку",
+            tooltip=get_string("sidebar.delete.tooltip", self.locale),
+            ariaLabel=get_string("sidebar.delete.aria", self.locale),
             command=app.delete_selected_cards,
             bg=manage_section["bg"],
         )
         btn_delete.pack(anchor="w", padx=10, pady=5)
         app.btn_delete_cards = btn_delete.button
 
-        tk.Label(other_sections, text="Группы / рамки", bg="#f0f0f0",
-                 font=("Arial", 12, "bold")).pack(pady=(20, 5))
+        tk.Label(
+            other_sections,
+            text=get_string("sidebar.section.frames", self.locale),
+            bg="#f0f0f0",
+            font=("Arial", 12, "bold"),
+        ).pack(pady=(20, 5))
 
         btn_add_frame = IconWithTooltip(
             other_sections,
             icon=app.icon_loader.get("icon-frame-add"),
-            tooltip="Создать новую рамку для группировки",
-            ariaLabel="Добавить рамку",
+            tooltip=get_string("sidebar.frame_add.tooltip", self.locale),
+            ariaLabel=get_string("sidebar.frame_add.aria", self.locale),
             command=app.add_frame_dialog,
             bg=other_sections["bg"],
         )
@@ -109,22 +127,26 @@ class SidebarFactory:
         btn_toggle_frame = IconWithTooltip(
             other_sections,
             icon=app.icon_loader.get("icon-frame-collapse"),
-            tooltip="Свернуть или развернуть выделенную рамку",
-            ariaLabel="Свернуть или развернуть рамку",
+            tooltip=get_string("sidebar.frame_toggle.tooltip", self.locale),
+            ariaLabel=get_string("sidebar.frame_toggle.aria", self.locale),
             command=app.toggle_selected_frame_collapse,
             bg=other_sections["bg"],
         )
         btn_toggle_frame.pack(anchor="w", padx=10, pady=5)
         app.btn_toggle_frame = btn_toggle_frame.button
 
-        tk.Label(other_sections, text="Файл", bg="#f0f0f0",
-                 font=("Arial", 12, "bold")).pack(pady=(20, 5))
+        tk.Label(
+            other_sections,
+            text=get_string("sidebar.section.file", self.locale),
+            bg="#f0f0f0",
+            font=("Arial", 12, "bold"),
+        ).pack(pady=(20, 5))
 
         btn_save = IconWithTooltip(
             other_sections,
             icon=app.icon_loader.get("icon-save"),
-            tooltip="Сохранить текущую доску в файл",
-            ariaLabel="Сохранить",
+            tooltip=get_string("sidebar.save.tooltip", self.locale),
+            ariaLabel=get_string("sidebar.save.aria", self.locale),
             command=app.save_board,
             bg=other_sections["bg"],
         )
@@ -133,8 +155,8 @@ class SidebarFactory:
         btn_load = IconWithTooltip(
             other_sections,
             icon=app.icon_loader.get("icon-load"),
-            tooltip="Загрузить доску из файла",
-            ariaLabel="Загрузить",
+            tooltip=get_string("sidebar.load.tooltip", self.locale),
+            ariaLabel=get_string("sidebar.load.aria", self.locale),
             command=app.load_board,
             bg=other_sections["bg"],
         )
@@ -143,8 +165,8 @@ class SidebarFactory:
         btn_export = IconWithTooltip(
             other_sections,
             icon=app.icon_loader.get("icon-export-png"),
-            tooltip="Сохранить доску как изображение PNG",
-            ariaLabel="Экспорт в PNG",
+            tooltip=get_string("sidebar.export.tooltip", self.locale),
+            ariaLabel=get_string("sidebar.export.aria", self.locale),
             command=app.export_png,
             bg=other_sections["bg"],
         )
@@ -153,21 +175,25 @@ class SidebarFactory:
         btn_attach_image = IconWithTooltip(
             other_sections,
             icon=app.icon_loader.get("icon-attach-image"),
-            tooltip="Добавить изображение к выделенной карточке",
-            ariaLabel="Прикрепить изображение",
+            tooltip=get_string("sidebar.attach.tooltip", self.locale),
+            ariaLabel=get_string("sidebar.attach.aria", self.locale),
             command=app.attach_image_from_file,
             bg=other_sections["bg"],
         )
         btn_attach_image.pack(anchor="w", padx=10, pady=5)
 
-        tk.Label(other_sections, text="Вид", bg="#f0f0f0",
-                 font=("Arial", 12, "bold")).pack(pady=(15, 5))
+        tk.Label(
+            other_sections,
+            text=get_string("sidebar.section.view", self.locale),
+            bg="#f0f0f0",
+            font=("Arial", 12, "bold"),
+        ).pack(pady=(15, 5))
 
         theme_button = IconWithTooltip(
             other_sections,
             icon=app.icon_loader.get("icon-theme-toggle"),
             tooltip=app.get_theme_button_text(),
-            ariaLabel="Переключить тему",
+            ariaLabel=get_string("sidebar.theme.aria", self.locale),
             command=app.toggle_theme,
             bg=other_sections["bg"],
         )
@@ -175,33 +201,43 @@ class SidebarFactory:
         app.btn_theme = theme_button.button
         app.btn_theme_tooltip = theme_button._tooltip
 
-        tk.Label(other_sections, text="Сетка", bg="#f0f0f0",
-                 font=("Arial", 12, "bold")).pack(pady=(20, 5))
+        tk.Label(
+            other_sections,
+            text=get_string("sidebar.section.grid", self.locale),
+            bg="#f0f0f0",
+            font=("Arial", 12, "bold"),
+        ).pack(pady=(20, 5))
 
         chk_show_grid = tk.Checkbutton(
             other_sections,
-            text="Показывать сетку",
+            text=get_string("sidebar.grid.toggle", self.locale),
             variable=app.var_show_grid,
             bg="#f0f0f0",
             command=app.on_toggle_show_grid,
+            takefocus=True,
         )
         chk_show_grid.pack(fill="x", padx=10, pady=2)
-        add_tooltip(chk_show_grid, "Отобразить или скрыть сетку на холсте")
+        add_tooltip(chk_show_grid, get_string("sidebar.grid.tooltip", self.locale))
 
         chk_snap = tk.Checkbutton(
             other_sections,
-            text="Привязка к сетке",
+            text=get_string("sidebar.grid.snap", self.locale),
             variable=app.var_snap_to_grid,
             bg="#f0f0f0",
             command=app.on_toggle_snap_to_grid,
+            takefocus=True,
         )
         chk_snap.pack(fill="x", padx=10, pady=2)
-        add_tooltip(chk_snap, "Включить или выключить привязку карточек к сетке")
+        add_tooltip(chk_snap, get_string("sidebar.grid.snap.tooltip", self.locale))
 
         frame_grid = tk.Frame(other_sections, bg="#f0f0f0")
         frame_grid.pack(fill="x", padx=10, pady=2)
 
-        tk.Label(frame_grid, text="Шаг:", bg="#f0f0f0").pack(side="left")
+        tk.Label(
+            frame_grid,
+            text=get_string("sidebar.grid.step_label", self.locale),
+            bg="#f0f0f0",
+        ).pack(side="left")
 
         spn_grid = tk.Spinbox(
             frame_grid,
@@ -211,14 +247,19 @@ class SidebarFactory:
             textvariable=app.var_grid_size,
             width=5,
             command=app.on_grid_size_change,
+            takefocus=True,
         )
         spn_grid.pack(side="left", padx=(5, 0))
         spn_grid.bind("<Return>", app.on_grid_size_change)
         spn_grid.bind("<FocusOut>", app.on_grid_size_change)
-        add_tooltip(spn_grid, "Изменить шаг сетки (Enter для применения)")
+        add_tooltip(spn_grid, get_string("sidebar.grid.step.tooltip", self.locale))
 
-        tk.Label(controls_frame, text="Мини-карта", bg="#f0f0f0",
-                 font=("Arial", 12, "bold")).pack(pady=(20, 5))
+        tk.Label(
+            controls_frame,
+            text=get_string("sidebar.minimap.title", self.locale),
+            bg="#f0f0f0",
+            font=("Arial", 12, "bold"),
+        ).pack(pady=(20, 5))
 
         app.minimap = tk.Canvas(
             controls_frame, width=240, height=160,
@@ -226,10 +267,22 @@ class SidebarFactory:
         )
         app.minimap.pack(padx=10, pady=(0, 10))
         app.minimap.bind("<Button-1>", app.on_minimap_click)
-        add_tooltip(app.minimap, "Нажмите, чтобы переместить вид по доске")
-        add_canvas_tooltip(app.minimap, "minimap_card", "Карточка на доске")
-        add_canvas_tooltip(app.minimap, "minimap_frame", "Рамка на доске")
-        add_canvas_tooltip(app.minimap, "minimap_viewport", "Текущая область просмотра")
+        add_tooltip(app.minimap, get_string("sidebar.minimap.tooltip", self.locale))
+        add_canvas_tooltip(
+            app.minimap,
+            "minimap_card",
+            get_string("sidebar.minimap.card.tooltip", self.locale),
+        )
+        add_canvas_tooltip(
+            app.minimap,
+            "minimap_frame",
+            get_string("sidebar.minimap.frame.tooltip", self.locale),
+        )
+        add_canvas_tooltip(
+            app.minimap,
+            "minimap_viewport",
+            get_string("sidebar.minimap.viewport.tooltip", self.locale),
+        )
 
         tk.Label(
             controls_frame,

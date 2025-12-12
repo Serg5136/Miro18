@@ -21,6 +21,7 @@ from .config import THEMES, load_theme_settings, save_theme_settings
 from .history import History
 from .io import files as file_io
 from .ui import IconLoader, LayoutBuilder
+from .ui.localization import DEFAULT_LOCALE, get_string
 from .view.canvas_view import CanvasView
 
 class BoardApp:
@@ -29,6 +30,8 @@ class BoardApp:
         self.root = tk.Tk()
         self.root.title("Mini Miro Board (Python)")
         self.root.geometry("1200x800")
+
+        self.locale = DEFAULT_LOCALE
 
         self.icon_loader = IconLoader()
 
@@ -141,7 +144,7 @@ class BoardApp:
         self.minimap = None
 
         # UI helpers
-        self.ui_builder = LayoutBuilder()
+        self.ui_builder = LayoutBuilder(locale=self.locale)
 
         self._build_ui()
         self.canvas_view = CanvasView(self.canvas, self.minimap, self.theme)
@@ -167,7 +170,8 @@ class BoardApp:
             self.minimap.config(bg=self.theme["minimap_bg"])
 
     def get_theme_button_text(self):
-        return "Тёмная тема" if self.theme_name == "light" else "Светлая тема"
+        key = "sidebar.theme.tooltip.light" if self.theme_name == "light" else "sidebar.theme.tooltip.dark"
+        return get_string(key, self.locale)
 
     def _redraw_with_current_theme(self):
         state = self.get_board_data()

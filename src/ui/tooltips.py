@@ -83,6 +83,7 @@ class Tooltip:
 def add_tooltip(widget: tk.Misc, text: str, delay: int = 500) -> Tooltip:
     tooltip = Tooltip(widget, text, delay=delay)
     tooltip.bind_to_widget()
+    tooltip.bind_focus()
     if not hasattr(widget, "_tooltips"):
         widget._tooltips = []  # type: ignore[attr-defined]
     widget._tooltips.append(tooltip)  # type: ignore[attr-defined]

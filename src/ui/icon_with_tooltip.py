@@ -16,6 +16,7 @@ class IconWithTooltip(tk.Frame):
         icon: tk.PhotoImage,
         tooltip: str,
         ariaLabel: str,
+        ariaDescribedby: str | None = None,
         size: int = 40,
         fallback_text: str | None = None,
         command: Callable[[], None] | None = None,
@@ -38,6 +39,7 @@ class IconWithTooltip(tk.Frame):
         super().__init__(master, **kwargs)
         self.icon = icon
         label_text = fallback_text or ariaLabel
+        describedby = ariaDescribedby or tooltip
 
         self.button = tk.Button(
             self,
@@ -54,6 +56,7 @@ class IconWithTooltip(tk.Frame):
 
         # Keep the text accessible for screen readers while minimizing visual noise.
         self.button.configure(padx=0, pady=0)
+        self.button.configure(highlightcolor="#4a90e2", highlightbackground="#4a90e2")
 
         self._tooltip = Tooltip(self.button, tooltip, delay=300)
         self._tooltip.bind_to_widget()
@@ -66,6 +69,7 @@ class IconWithTooltip(tk.Frame):
 
         # Store aria label for potential introspection/testing.
         self.button._aria_label = ariaLabel  # type: ignore[attr-defined]
+        self.button._aria_describedby = describedby  # type: ignore[attr-defined]
 
     def _on_activate(self, event: tk.Event) -> str:
         self.button.invoke()

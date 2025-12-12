@@ -1,6 +1,7 @@
 """UI helpers for BoardApp."""
 
-from .layout import LayoutBuilder, ToolbarFactory, CanvasFactory
+from .icon_with_tooltip import IconWithTooltip
+from .layout import CanvasFactory, LayoutBuilder, ToolbarFactory
 from .sidebar import SidebarFactory
 
 __all__ = [
@@ -8,4 +9,5 @@ __all__ = [
     "ToolbarFactory",
     "CanvasFactory",
     "SidebarFactory",
+    "IconWithTooltip",
 ]

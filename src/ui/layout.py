@@ -3,11 +3,15 @@ from typing import Optional
 
 from .icon_with_tooltip import IconWithTooltip
 from .sidebar import SidebarFactory
+from .localization import DEFAULT_LOCALE, get_string
 from .tooltips import add_tooltip
 from ..input import EventBinder
 
 
 class ToolbarFactory:
+    def __init__(self, locale: str = DEFAULT_LOCALE) -> None:
+        self.locale = locale
+
     def create(self, app) -> tk.Frame:
         toolbar = tk.Frame(app.root, bg="#e0e0e0", height=56)
         toolbar.grid(row=0, column=0, columnspan=2, sticky="new")
@@ -16,8 +20,8 @@ class ToolbarFactory:
         btn_undo_toolbar = IconWithTooltip(
             toolbar,
             icon=app.icon_loader.get("icon-undo"),
-            tooltip="Отменить последнее действие",
-            ariaLabel="Отменить",
+            tooltip=get_string("toolbar.undo.tooltip", self.locale),
+            ariaLabel=get_string("toolbar.undo.aria", self.locale),
             command=app.on_undo,
             bg="#e0e0e0",
         )
@@ -27,8 +31,8 @@ class ToolbarFactory:
         btn_redo_toolbar = IconWithTooltip(
             toolbar,
             icon=app.icon_loader.get("icon-redo"),
-            tooltip="Повторить отменённое действие",
-            ariaLabel="Повторить",
+            tooltip=get_string("toolbar.redo.tooltip", self.locale),
+            ariaLabel=get_string("toolbar.redo.aria", self.locale),
             command=app.on_redo,
             bg="#e0e0e0",
         )
@@ -38,8 +42,8 @@ class ToolbarFactory:
         btn_attach_image = IconWithTooltip(
             toolbar,
             icon=app.icon_loader.get("icon-attach-image"),
-            tooltip="Прикрепить файл-изображение к выделенной карточке без создания новой",
-            ariaLabel="Прикрепить к карточке",
+            tooltip=get_string("toolbar.attach.tooltip", self.locale),
+            ariaLabel=get_string("toolbar.attach.aria", self.locale),
             command=app.attach_image_from_file,
             bg="#e0e0e0",
         )
@@ -48,8 +52,8 @@ class ToolbarFactory:
         btn_text_color = IconWithTooltip(
             toolbar,
             icon=app.icon_loader.get("icon-text-color"),
-            tooltip="Изменить цвет текста карточек для текущей темы",
-            ariaLabel="Цвет текста",
+            tooltip=get_string("toolbar.text_color.tooltip", self.locale),
+            ariaLabel=get_string("toolbar.text_color.aria", self.locale),
             command=app.change_text_color,
             bg="#e0e0e0",
         )
@@ -58,33 +62,39 @@ class ToolbarFactory:
         size_frame = tk.Frame(toolbar, bg="#e0e0e0")
         size_frame.pack(side="left", padx=(12, 2), pady=8)
 
-        tk.Label(size_frame, text="Ширина:", bg="#e0e0e0").grid(row=0, column=0, padx=(0, 4))
+        tk.Label(
+            size_frame, text=get_string("toolbar.width.label", self.locale), bg="#e0e0e0"
+        ).grid(row=0, column=0, padx=(0, 4))
         spn_width = tk.Spinbox(
             size_frame,
             from_=60,
             to=1200,
             width=6,
             textvariable=app.var_card_width,
+            takefocus=True,
         )
         spn_width.grid(row=0, column=1, padx=(0, 8))
-        add_tooltip(spn_width, "Задайте ширину карточки в пикселях")
+        add_tooltip(spn_width, get_string("toolbar.width.tooltip", self.locale))
 
-        tk.Label(size_frame, text="Высота:", bg="#e0e0e0").grid(row=0, column=2, padx=(0, 4))
+        tk.Label(
+            size_frame, text=get_string("toolbar.height.label", self.locale), bg="#e0e0e0"
+        ).grid(row=0, column=2, padx=(0, 4))
         spn_height = tk.Spinbox(
             size_frame,
             from_=40,
             to=1200,
             width=6,
             textvariable=app.var_card_height,
+            takefocus=True,
         )
         spn_height.grid(row=0, column=3, padx=(0, 8))
-        add_tooltip(spn_height, "Задайте высоту карточки в пикселях")
+        add_tooltip(spn_height, get_string("toolbar.height.tooltip", self.locale))
 
         btn_apply_size = IconWithTooltip(
             size_frame,
             icon=app.icon_loader.get("icon-apply-size"),
-            tooltip="Применить указанные ширину и высоту к выбранным карточкам",
-            ariaLabel="Применить размеры",
+            tooltip=get_string("toolbar.apply_size.tooltip", self.locale),
+            ariaLabel=get_string("toolbar.apply_size.aria", self.locale),
             command=app.apply_card_size_from_controls,
             bg="#e0e0e0",
         )
@@ -107,9 +117,11 @@ class LayoutBuilder:
         sidebar_factory: Optional[SidebarFactory] = None,
         canvas_factory: Optional[CanvasFactory] = None,
         events_binder: Optional[EventBinder] = None,
+        locale: str = DEFAULT_LOCALE,
     ):
-        self.toolbar_factory = toolbar_factory or ToolbarFactory()
-        self.sidebar_factory = sidebar_factory or SidebarFactory()
+        self.locale = locale
+        self.toolbar_factory = toolbar_factory or ToolbarFactory(locale)
+        self.sidebar_factory = sidebar_factory or SidebarFactory(locale)
         self.canvas_factory = canvas_factory or CanvasFactory()
         self.events_binder = events_binder or EventBinder()
 
